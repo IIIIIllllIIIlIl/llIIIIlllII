@@ -104,7 +104,8 @@ local UNDERCOVER_USERIDS = {
     [1094365126] = true, [2707323976] = true, [10418656725] = true, [1301544215] = true, [2912939789] = true,
     [2892547873] = true, [4423560567] = true, [3200805891] = true, [167515541] = true, [3775606254] = true, -- < js everyone in the group not necessarily undercover
     [1572762983] = true, [7216255648] = true, [984937772] = true, [1236712946] = true, [3812472402] = true,
-    [4160998891] = true, [2400924396] = true, [582045008] = true, [618811833] = true, [2] = true
+    [4160998891] = true, [2400924396] = true, [582045008] = true, [618811833] = true, [3543999912] = true,
+    [881226148] = true, [2] = true, [2] = true, [2] = true, [2] = true,
 }
 
 local SPECIAL_TAGS = {
