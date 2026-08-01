@@ -98,13 +98,11 @@ end)
 
 -- === DATA ===
 local UNDERCOVER_USERIDS = {
-    [4559062275] = true, [3860151481] = true, [3869228] = true, [621822647] = true, [10565639315] = true, [1617828795] = true,
-    [167515541] = true, [2799921403] = true, [1987394728] = true, [5003063221] = true, [7627361] = true,
-    [3599926474] = true, [10539855360] = true, [43829894] = true, [1236712946] = true, [14100504] = true,
-    [1094365126] = true, [2707323976] = true, [10418656725] = true, [1301544215] = true, [2912939789] = true,
-    [2892547873] = true, [4423560567] = true, [3200805891] = true, [167515541] = true, [3775606254] = true, -- < js everyone in the group not necessarily undercover
-    [1572762983] = true, [7216255648] = true, [984937772] = true, [1236712946] = true, [3812472402] = true,
-    [4160998891] = true, [2400924396] = true, [582045008] = true, [2] = true, [2] = true
+    [4559062275] = true, [3860151481] = true, [10539855360] = true, [43829894] = true, [14100504] = true, [2707323976] = true,
+    [7627361] = true, [2912939789] = true, [1301544215] = true, [347225808] = true, [10565639315] = true, [1] = true,
+    [4559062275] = true, [1236712946] = true, [582045008] = true, [11219101867] = true, [4138598689] = true, [2357314326] = true, -- < js everyone in the group not necessarily undercover | Admin
+    [5688933] = true, [3340731736] = true, [10145439290] = true, [3587870844] = true, [5715229697] = true, [3453286630] = true, -- < js everyone in the group not necessarily undercover | Mod
+    [1] = true, [1] = true, [1] = true, [1] = true, [1] = true  -- < js everyone in the group not necessarily undercover | Mod
 }
 
 local SPECIAL_TAGS = {
@@ -543,7 +541,7 @@ topAnnouncement.Position = UDim2.new(0, 165, 0, 0)
 topAnnouncement.Size = UDim2.new(1, -130, 1, 0)
 topAnnouncement.Font = Enum.Font.GothamBold
 --xx Updated:                                                          --
-topAnnouncement.Text = "Updated: 22/04/2026 | 2 VF groups added"
+topAnnouncement.Text = "Updated: 01/08/2026 | Undercover list wiped"
 topAnnouncement.TextColor3 = theme.TextSecondary
 topAnnouncement.TextSize = 17
 topAnnouncement.TextXAlignment = Enum.TextXAlignment.Left
@@ -800,7 +798,7 @@ local INFO_LINES = {
 -- xx UPDATES
 -- New items (+) should go at the TOP of this list.
 local UPDATE_LINES = {
-    "+ Added second VF staff group",
+    "+ Added new VF staff group",
     "+ Fixed esp bugs",
     "+ Revamped Info/Updates",
     "+ Added Experimental functions",
