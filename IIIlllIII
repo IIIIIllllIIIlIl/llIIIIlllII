@@ -230,12 +230,17 @@ end
 -- === STAFF LOGIC ===
 local function playSound(id, vol)
     if not config.SoundsEnabled then return end
-    local s = Instance.new("Sound")
-    s.SoundId = id
-    s.Volume = vol or 2
-    s.Parent = SoundService
-    pcall(function() SoundService:PlayLocalSound(s) end)
-    s.Ended:Connect(function() s:Destroy() end)
+    task.spawn(function()
+        local s = Instance.new("Sound")
+        s.Name = "StaffAlertSound_" .. tostring(tick())
+        s.SoundId = id
+        s.Volume = vol or 2
+        s.RollOffMaxDistance = 0
+        s.Parent = SoundService
+        s:Play()
+        s.Ended:Wait()
+        pcall(function() s:Destroy() end)
+    end)
 end
 
 -- Returns a list of {id, role} for every main staff group the player is in
@@ -374,6 +379,7 @@ local function applyESP(player)
 
     local function attach(char)
         if not char then return end
+        if not char:FindFirstChildOfClass("Humanoid") then return end
         local key, folder, fillClr, outlineClr
         if category == "main" then
             key    = "HL_"  .. player.UserId
@@ -540,8 +546,8 @@ topAnnouncement.BackgroundTransparency = 1
 topAnnouncement.Position = UDim2.new(0, 165, 0, 0)
 topAnnouncement.Size = UDim2.new(1, -130, 1, 0)
 topAnnouncement.Font = Enum.Font.GothamBold
---xx Updated:                                                          --
-topAnnouncement.Text = "Updated: 01/08/2026 | Undercover list wiped"
+--xx Updated:                                                          
+topAnnouncement.Text = "Updated: 05/08/2026 | Up To Date"
 topAnnouncement.TextColor3 = theme.TextSecondary
 topAnnouncement.TextSize = 17
 topAnnouncement.TextXAlignment = Enum.TextXAlignment.Left
@@ -798,6 +804,11 @@ local INFO_LINES = {
 -- xx UPDATES
 -- New items (+) should go at the TOP of this list.
 local UPDATE_LINES = {
+    "+ Fixed ESP attaching to non-player parts",
+    "+ Fixed sound not playing for multiple staff",
+    "+ F1 check now shows one notif per player (blue border)",
+    "+ F1 check shows only name, no group/role clutter",
+    "+ Staff join/leave border is green for main group",
     "+ Added new VF staff group",
     "+ Fixed esp bugs",
     "+ Revamped Info/Updates",
@@ -1057,17 +1068,8 @@ local function showStaffNotification()
         local category   = getPlayerCategory(inMain, isU, inPossible)
         if not category then continue end
 
-        local parts = {}
-        for _, m in ipairs(mains) do
-            table.insert(parts, getGroupName(m.id) .. ": " .. m.role)
-        end
-        if isU and not inMain then
-            table.insert(parts, "[!] UNDERCOVER")
-        end
-        for _, m in ipairs(possible) do
-            table.insert(parts, getGroupName(m.id) .. " (Possible Staff): " .. m.role)
-        end
-        local line = getDisplayName(p) .. " (@" .. p.Name .. ") | " .. table.concat(parts, " | ")
+        -- Only show DisplayName + @username, no group/role info
+        local line = getDisplayName(p) .. " (@" .. p.Name .. ")"
 
         if     category == "main"       then table.insert(mainLines, line)
         elseif category == "undercover" then table.insert(undLines,  line)
@@ -1075,16 +1077,28 @@ local function showStaffNotification()
         end
     end
 
-    local allLines = {}
-    for _, l in ipairs(mainLines) do table.insert(allLines, l) end
-    for _, l in ipairs(undLines)  do table.insert(allLines, l) end
-    for _, l in ipairs(possLines) do table.insert(allLines, l) end
-
-    if #allLines > 0 then
-        notify("STAFF IN SERVER", table.concat(allLines, "\n"), 8, "warning", nil, true)
-    else
-        notify("STAFF IN SERVER", "No staff or undercover players currently in the server.", 4, "success", nil, true)
+    local total = #mainLines + #undLines + #possLines
+    if total == 0 then
+        notify("STAFF IN SERVER", "No staff or undercover players currently in the server.", 4, nil, theme.AccentPrimary, true)
+        return
     end
+
+    -- Fire one notification per detected player so none get cut off.
+    -- Each category gets its own colour; blue border (AccentPrimary) for F1 check.
+    task.spawn(function()
+        for _, line in ipairs(mainLines) do
+            notify("✅ STAFF (Main Group)", line, 8, nil, theme.AccentPrimary, true)
+            task.wait(0.15)
+        end
+        for _, line in ipairs(undLines) do
+            notify("⚠ UNDERCOVER STAFF", line, 8, nil, theme.AccentPrimary, true)
+            task.wait(0.15)
+        end
+        for _, line in ipairs(possLines) do
+            notify("⚡ POSSIBLE STAFF", line, 8, nil, theme.AccentPrimary, true)
+            task.wait(0.15)
+        end
+    end)
 end
 
 createButton("Check Active Staff", "Lists staff and undercover players currently in server", 210, function()
