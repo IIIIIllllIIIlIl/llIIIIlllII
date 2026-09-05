@@ -1,6 +1,7 @@
 --========================================================--
 --  Staff Alert by we1qxpo7j8fgkh3ok0ji
 --  Keybind: T
+--  This script is private property.
 ----========================================================--
 
 local Players = game:GetService("Players")
@@ -100,8 +101,8 @@ end)
 local UNDERCOVER_USERIDS = {
     [4559062275] = true, [3860151481] = true, [10539855360] = true, [43829894] = true, [14100504] = true, [2707323976] = true,
     [7627361] = true, [2912939789] = true, [1301544215] = true, [347225808] = true, [10565639315] = true, [1] = true,
-    [4559062275] = true, [1236712946] = true, [582045008] = true, [11219101867] = true, [4138598689] = true, [2357314326] = true, -- < js everyone in the group not necessarily undercover | Admin
-    [5688933] = true, [3340731736] = true, [10145439290] = true, [3587870844] = true, [5715229697] = true, [3453286630] = true, -- < js everyone in the group not necessarily undercover | Mod
+    [1] = true, [1] = true, [1] = true, [1] = true, [1] = true, [1] = true, -- < js everyone in the group not necessarily undercover | Admin
+    [1] = true, [1] = true, [1] = true, [1] = true, [1] = true, [1] = true, -- < js everyone in the group not necessarily undercover | Mod
     [1] = true, [1] = true, [1] = true, [1] = true, [1] = true  -- < js everyone in the group not necessarily undercover | Mod
 }
 
